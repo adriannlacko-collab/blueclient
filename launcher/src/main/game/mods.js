@@ -491,7 +491,18 @@ async function sync({ instanceDir, mods = [], version, loader, companionDir, onP
   // on disk: launching offline must not empty the mods folder.
   const keep = new Set(installed);
   if (unresolved || unplaced) {
-    for (const filename of previous) keep.add(filename);
+    // Held — except a build this same press has just put a newer one of in
+    // the folder (2026-09-22). Sodium updated while Lithium's download
+    // stalled kept the old Sodium beside the new one, and Fabric refuses to
+    // start on two jars of one mod: the hold meant to keep the game working
+    // offline was what stopped it (reproduced against a stand-in Modrinth: a
+    // press with one update and one failed fetch left sodium-0.6.0.jar and
+    // sodium-0.7.0.jar side by side).
+    const replaced = await replacedBy(modsDir, previous, installed);
+    for (const filename of previous) {
+      if (!replaced.has(filename)) { keep.add(filename); continue; }
+      await fsp.rm(path.join(modsDir, filename), { force: true }).catch(() => {});
+    }
   } else {
     for (const filename of previous) {
       if (keep.has(filename)) continue;
@@ -510,6 +521,33 @@ async function sync({ instanceDir, mods = [], version, loader, companionDir, onP
 
   await writeManifest(modsDir, [...keep]);
   return { installed: [...keep], failed, missing, held, conflicts, unsupported, companionSkipped, companionCarries, companionLocked };
+}
+
+/**
+ * The jars an earlier press installed that a jar of this press now stands in
+ * for (2026-09-22): the same mod, by the id in its own `fabric.mod.json` —
+ * the name Fabric refuses a second copy of — under an older file name. Read
+ * only on a press that holds the folder, which is the rare one, and only the
+ * launcher's own jars; one that cannot be read is not called a copy of
+ * anything and stays held.
+ *
+ * @returns {Promise<Set<string>>} file names from `previous`
+ */
+async function replacedBy(modsDir, previous, installed) {
+  const out = new Set();
+  const left = previous.filter((filename) => !installed.has(filename) && filename !== COMPANION);
+  if (!left.length) return out;
+  const ids = new Set();
+  for (const filename of installed) {
+    if (filename === COMPANION) continue;
+    const meta = await pairing.read(path.join(modsDir, filename));
+    if (meta) ids.add(meta.id);
+  }
+  for (const filename of left) {
+    const meta = await pairing.read(path.join(modsDir, filename));
+    if (meta && ids.has(meta.id)) out.add(filename);
+  }
+  return out;
 }
 
 /**
