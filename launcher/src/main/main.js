@@ -745,6 +745,12 @@ function startBackground() {
   // already running here, and does nothing on a PC without one.
   presence.start(launcher);
 
+  // The offline accounts' own skins the index has not taken yet, offered
+  // again (skinslots.js, syncOwn). Here rather than beside skins.init: the
+  // first fetch() in a run loads Node's HTTP client, some 35 ms on this
+  // thread, and that was landing before the window was even asked for.
+  skinSlots.syncOwn().catch(() => {});
+
   // What the first Play press would otherwise have to do at the press —
   // stamping the shaderpack, reading the jars, renewing an aged sign-in,
   // giving Mojang's Java the class archive it ships without — done now,
@@ -1397,10 +1403,10 @@ function registerIpc() {
   // A Wear renews an aged sign-in through the launcher's own renewal, under
   // the lane the launch uses, which tells the renderer what it wrote.
   skinSlots.init(app.getPath('userData'), store, { renew: () => launcher._renew(0) });
-  // An offline account's own skin answers for its name (2026-09-21), and
-  // any upload the index has not taken yet is offered again now.
+  // An offline account's own skin answers for its name (2026-09-21); any
+  // upload the index has not taken yet is offered again once Home is up
+  // (startBackground).
   skins.ownSkins(skinSlots.ownFor);
-  skinSlots.syncOwn().catch(() => {});
   ipcMain.handle('skins:slots', () => skinSlots.list());
   ipcMain.handle('skins:pick', async (_e, { index, variant } = {}) => {
     const result = await dialog.showOpenDialog(win, {
