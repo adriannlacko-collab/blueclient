@@ -314,13 +314,35 @@ function fitZoom() {
   win.webContents.setZoomFactor(stepped);
 }
 
+/**
+ * Whether a window put back where it last was could be reached there
+ * (2026-09-22). The position is saved as the window moves and handed back
+ * to the constructor as it is, and neither Electron nor Windows moves a
+ * window that lands outside every screen — so a launcher last closed on a
+ * second monitor, opened on the laptop alone, came up at x 2400 of a
+ * 1920-wide desktop: running, on the taskbar, and nowhere to be seen, the
+ * one failure a player cannot get past. The window is frameless and is
+ * dragged by its own top edge, so what has to be on a screen is that: a
+ * strip along the top at least 120 pixels wide and 20 deep inside some
+ * display's work area. Otherwise the saved position is left out and the
+ * window opens centred on the primary display, at its saved size.
+ */
+function reachable({ x, y, width }) {
+  const strip = { x, y, width: Math.max(1000, width), height: 40 };
+  return screen.getAllDisplays().some(({ workArea: area }) => {
+    const across = Math.min(strip.x + strip.width, area.x + area.width) - Math.max(strip.x, area.x);
+    const down = Math.min(strip.y + strip.height, area.y + area.height) - Math.max(strip.y, area.y);
+    return across >= 120 && down >= 20;
+  });
+}
+
 function createWindow() {
   const saved = store.get('window') || {};
   const bounds = {
     width: saved.width || 1180,
     height: saved.height || 608
   };
-  if (Number.isInteger(saved.x) && Number.isInteger(saved.y)) {
+  if (Number.isInteger(saved.x) && Number.isInteger(saved.y) && reachable({ x: saved.x, y: saved.y, width: bounds.width })) {
     bounds.x = saved.x;
     bounds.y = saved.y;
   }
