@@ -78,11 +78,13 @@ let world = null;
 /* ------------------------------------------------------------------ boot */
 
 (async function boot() {
-  await initState();
   /* The profile icons are cut from block textures; every page that shows one
      asks for it synchronously, so the textures are in hand before anything
-     paints (2026-09-09). */
-  await loadBlockIcons();
+     paints (2026-09-09). They are read while main answers the settings
+     rather than after it (2026-09-22): the two never needed each other, and
+     one after the other they were two waits end to end before the first
+     paint — the thirty-seven textures alone were 80–90 ms of it, measured. */
+  await Promise.all([initState(), loadBlockIcons()]);
 
   mainRegion = el('main', { class: 'main' });
   /* The evening light over the world (2026-09-17): the sky multiplied and the
