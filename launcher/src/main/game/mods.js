@@ -15,7 +15,7 @@
 const path = require('path');
 const fsp = require('fs/promises');
 
-const { ensureDir, download } = require('./files');
+const { ensureDir, download, writeFileAtomic } = require('./files');
 const companion = require('./companion');
 const jar = require('./jar');
 const memo = require('./memo');
@@ -252,7 +252,10 @@ async function writeManifest(modsDir, files) {
   const body = JSON.stringify({ files }, null, 2);
   const file = path.join(modsDir, MANIFEST);
   try { if (await fsp.readFile(file, 'utf8') === body) return; } catch { /* write it */ }
-  await fsp.writeFile(file, body, 'utf8');
+  // Whole or not at all (2026-09-22, files.writeFileAtomic): a manifest cut
+  // short reads as an empty one, and an empty one owns no jar — every mod
+  // the launcher installed would be left in the folder for good, unretired.
+  await writeFileAtomic(file, body, 'utf8');
 }
 
 /**
@@ -604,7 +607,9 @@ async function tuneEntityCulling(instanceDir) {
   if (root.tickCulling === false) return false;
   root.tickCulling = false;
   await ensureDir(path.dirname(file));
-  await fsp.writeFile(file, JSON.stringify(root, null, 2));
+  // The mod's own file, whole or not at all (2026-09-22): one cut short is
+  // one the mod cannot read, with the player's other keys in it.
+  await writeFileAtomic(file, JSON.stringify(root, null, 2));
   return true;
 }
 
@@ -649,7 +654,9 @@ async function tuneDynamicFps(instanceDir) {
   }
   if (!changed) return false;
   await ensureDir(path.dirname(file));
-  await fsp.writeFile(file, JSON.stringify(root, null, 2));
+  // The mod's own file, whole or not at all (2026-09-22): one cut short is
+  // one the mod cannot read, with the player's other keys in it.
+  await writeFileAtomic(file, JSON.stringify(root, null, 2));
   return true;
 }
 

@@ -47,7 +47,7 @@ const fsp = require('fs/promises');
 const zlib = require('zlib');
 const { shell } = require('electron');
 
-const { ensureDir, download } = require('./files');
+const { ensureDir, download, writeFileAtomic } = require('./files');
 const settings = require('./settings');   // FIRST_OPTIONS
 const modrinth = require('../modrinth');
 
@@ -80,7 +80,7 @@ async function readManifest(home) {
 
 async function writeManifest(home, packs) {
   await ensureDir(home);
-  await fsp.writeFile(manifestOf(home), JSON.stringify({ packs }, null, 2), 'utf8');
+  await writeFileAtomic(manifestOf(home), JSON.stringify({ packs }, null, 2), 'utf8');
 }
 
 /* ---------------------------------------------- options.txt: what is on */
@@ -142,7 +142,10 @@ async function setEnabled(home, file, on) {
   const agreed = parseList(lines, 'incompatibleResourcePacks').filter((v) => v !== entry);
   put('incompatibleResourcePacks', on ? [...agreed, entry] : agreed);
 
-  await fsp.writeFile(optionsOf(home), `${lines.join('\n')}\n`, 'utf8');
+  // Whole or not at all (2026-09-22, files.writeFileAtomic): this is the
+  // game's options.txt, every key and setting the player has, and one cut
+  // short by a closed launcher is one the game reads as a fresh install.
+  await writeFileAtomic(optionsOf(home), `${lines.join('\n')}\n`, 'utf8');
 }
 
 /* -------------------------------------------- what a pack says of itself */

@@ -36,10 +36,22 @@ function init(dir) {
   }
 }
 
+/**
+ * Beside the file and renamed over it (2026-09-22), the way store.js writes
+ * the settings: an index cut short by a closed launcher read as no index,
+ * and every name it held — the skin just worn among them (`remember`) — was
+ * asked of Mojang all over again, and drawn as Steve offline.
+ */
 function saveIndex() {
+  const file = path.join(cacheDir, 'index.json');
+  const tmp = `${file}.tmp`;
   try {
-    fs.writeFileSync(path.join(cacheDir, 'index.json'), JSON.stringify(index, null, 2));
-  } catch { /* cache is best-effort */ }
+    fs.writeFileSync(tmp, JSON.stringify(index, null, 2));
+    fs.renameSync(tmp, file);
+  } catch {
+    /* cache is best-effort */
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to tidy */ }
+  }
 }
 
 async function get(url, json = true) {

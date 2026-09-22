@@ -24,7 +24,7 @@ const fsp = require('fs/promises');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 
-const { ensureDir, isPresent, sha1, fetchJson, download, pool, extractNatives } = require('./files');
+const { ensureDir, isPresent, sha1, writeFileAtomic, fetchJson, download, pool, extractNatives } = require('./files');
 const memo = require('./memo');
 const { lane } = require('./lane');
 const { NAME: LAUNCHER_NAME, VERSION: LAUNCHER_VERSION } = require('../version');
@@ -220,7 +220,10 @@ async function versionJson(root, id) {
 
   const json = await fetchJson(entry.url);
   await ensureDir(path.dirname(file));
-  await fsp.writeFile(file, JSON.stringify(json, null, 2));
+  // Whole or not at all (2026-09-22, files.writeFileAtomic): the folder is
+  // `.minecraft`'s, and a half-written JSON left by a launcher closed here
+  // is one the other launchers on this PC cannot read either.
+  await writeFileAtomic(file, JSON.stringify(json, null, 2));
   return json;
 }
 
@@ -319,7 +322,7 @@ async function resolve(root, { version, loader }) {
       '/' + encodeURIComponent(loaderVersion) + '/profile/json'
     );
     await ensureDir(path.dirname(file));
-    await fsp.writeFile(file, JSON.stringify(profile, null, 2));
+    await writeFileAtomic(file, JSON.stringify(profile, null, 2));
   }
 
   return { json: mergeVersions(profile, vanilla), versionId: id, loaderVersion };

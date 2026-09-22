@@ -514,11 +514,29 @@ function readAttempts() {
   }
 }
 
+/**
+ * Beside the file and renamed over it (2026-09-22), the way store.js writes
+ * the settings. The last write here is the one just before the launcher
+ * quits into the swap, and a record cut short by that quit read as no record
+ * at all: the failure count went with it, and the loop it exists to stop
+ * could run again. A rename Windows refuses (a scanner holding the file)
+ * falls back to the plain write this always was.
+ */
 function writeAttempts(record) {
+  const file = attemptsFile();
+  const body = JSON.stringify(record, null, 2);
+  const tmp = `${file}.tmp`;
   try {
-    fs.writeFileSync(attemptsFile(), JSON.stringify(record, null, 2));
+    fs.writeFileSync(tmp, body);
+    try {
+      fs.renameSync(tmp, file);
+    } catch {
+      fs.writeFileSync(file, body);
+    }
   } catch {
     /* Diagnostics never fail a swap. */
+  } finally {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to tidy */ }
   }
 }
 
