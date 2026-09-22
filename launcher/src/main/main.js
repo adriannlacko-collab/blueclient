@@ -726,8 +726,14 @@ function startBackground() {
   settled = true;
 
   // The shortcuts' icon (refreshShortcuts): a handful of synchronous shell
-  // calls on Windows, and nothing a first frame needs.
-  refreshShortcuts();
+  // calls on Windows, and nothing a first frame needs. Caught, because
+  // whatever a shell folder does must not keep the updater below from
+  // starting.
+  try {
+    refreshShortcuts();
+  } catch (error) {
+    noteCrash('shortcuts', error);
+  }
 
   // Watch for a newer BlueClient and fetch it in the background (src/main/
   // update.js). After createWindow because the first thing it can report —
