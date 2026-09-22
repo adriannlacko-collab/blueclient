@@ -742,6 +742,10 @@ function download(url, dest, onProgress, depth = 0) {
   return new Promise((resolve, reject) => {
     if (depth > 5) return reject(new Error('too many redirects'));
 
+    // Until the file is open a failure is only a rejection; after, it is
+    // `fail` below, which closes the file first.
+    let onFailure = reject;
+
     // A socket that goes quiet mid-download used to hold the corner at the same
     // percent for ever (2026-09-16): no bytes for a minute is a dead download,
     // and the next 20-minute check starts it again from nothing.
@@ -772,11 +776,33 @@ function download(url, dest, onProgress, depth = 0) {
       });
       response.pipe(file);
       file.on('finish', () => file.close(() => resolve(hash.digest('base64'))));
-      file.on('error', reject);
-      response.on('error', reject);
+
+      /* A download that dies part-way closes its file before it says so
+         (2026-09-22). A stalled or dropped socket unpipes the response and
+         leaves the write stream open — nothing ends it — so every failed
+         download kept a handle on its bundle.tar.gz for the life of the
+         launcher, and checkBundle's wipe of the attempt folder, which runs the
+         moment this rejects, could not take a folder with an open file in it
+         on Windows. Measured with a server that goes quiet after the first
+         kilobyte: one handle left open per failure before, none after. */
+      let failed = false;
+      const fail = (error) => {
+        if (failed) return;
+        failed = true;
+        request.destroy();
+        if (file.closed) {
+          reject(error);
+          return;
+        }
+        file.once('close', () => reject(error));
+        file.destroy();
+      };
+      onFailure = fail;
+      file.on('error', fail);
+      response.on('error', fail);
     });
 
-    request.on('error', reject);
+    request.on('error', (error) => onFailure(error));
     request.on('timeout', () => request.destroy(new Error('bundle download stalled')));
   });
 }
