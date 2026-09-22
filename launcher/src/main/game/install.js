@@ -163,10 +163,27 @@ function offlineUuid(username) {
 
 /* -------------------------------------------------------------- version */
 
+/**
+ * Mojang's list of versions, kept for an hour (2026-09-22).
+ *
+ * It was kept for the life of the process, and a launcher is left open for
+ * days: one open on the day a Minecraft came out never offered it, and a
+ * profile set to it (from Import, or another copy's settings) was refused as
+ * an "Unknown Minecraft version" until a restart. A copy that cannot be
+ * renewed is used as it is.
+ */
+const MANIFEST_TTL_MS = 60 * 60 * 1000;
 let manifestCache = null;
+let manifestAt = 0;
 
-async function versionManifest() {
-  if (!manifestCache) manifestCache = await fetchJson(VERSION_MANIFEST);
+async function versionManifest({ fresh = false } = {}) {
+  if (manifestCache && !fresh && Date.now() - manifestAt < MANIFEST_TTL_MS) return manifestCache;
+  try {
+    manifestCache = await fetchJson(VERSION_MANIFEST);
+    manifestAt = Date.now();
+  } catch (error) {
+    if (!manifestCache) throw error;
+  }
   return manifestCache;
 }
 
@@ -193,8 +210,12 @@ async function versionJson(root, id) {
     if (local.id && (local.downloads || local.inheritsFrom)) return local;
   } catch { /* fall through and fetch it */ }
 
-  const manifest = await versionManifest();
-  const entry = manifest.versions.find((v) => v.id === id);
+  let entry = (await versionManifest()).versions.find((v) => v.id === id);
+  // Released since the copy in hand was fetched: ask once more, not twice a
+  // minute for an id that really is unknown.
+  if (!entry && Date.now() - manifestAt > 60 * 1000) {
+    entry = (await versionManifest({ fresh: true })).versions.find((v) => v.id === id);
+  }
   if (!entry) throw new Error('Unknown Minecraft version "' + id + '"');
 
   const json = await fetchJson(entry.url);
