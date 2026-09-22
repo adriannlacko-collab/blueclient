@@ -38,6 +38,8 @@ let nav;
 let strip;
 
 export function render() {
+  /* The strip from the last paint lets go of the window (2026-09-22). */
+  strip?.destroy();
   body = el('div', { class: 'settings__body' });
   /* The masthead's tab strip, at this strip's own size (2026-09-14, Adrian:
      "the settings category bar should look and feel exactly the same as the
@@ -72,6 +74,11 @@ export function render() {
       ])
     ])
   ]);
+}
+
+/** The page was left: its strip lets go of the window (2026-09-22). */
+export function unmounted() {
+  strip?.destroy();
 }
 
 function selectSection(id) {
