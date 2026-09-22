@@ -1693,18 +1693,39 @@ function onLaunchClick() {
   return launchActive();
 }
 
+/* A press being checked, and when the last launch went out — see below. */
+const PRESS_SETTLE_MS = 1000;
+let pressing = false;
+let launchedAt = 0;
+
 /**
  * Start the active profile — plain, or with a server to join on arrival
  * (a partner row). Everything Play checks, Play checks here too.
  */
 async function launchActive(join = null) {
+  /* One launch per press, and a double-click is one press (2026-09-22). The
+     session row is announced the moment main has the launch, so the second
+     click of a double-click found the first click's game already running and
+     asked "Start anyway?" about a game nobody meant to start twice. A press
+     while the first is still being checked, or within a second of its launch
+     going out, is the same press; after that it is a deliberate Launch
+     another, and asks as it always has. */
+  if (pressing || Date.now() - launchedAt < PRESS_SETTLE_MS) return;
   const profile = activeProfile();
   if (!profile && activeAccount()) {
     toast('Select a profile first', 'error');
     setRoute('profiles');
     return;
   }
-  if (!(await launchChecks(profile, join))) return;
+  pressing = true;
+  let go;
+  try {
+    go = await launchChecks(profile, join);
+  } finally {
+    pressing = false;
+  }
+  if (!go) return;
+  launchedAt = Date.now();
   await startGame(profile, join);
 }
 

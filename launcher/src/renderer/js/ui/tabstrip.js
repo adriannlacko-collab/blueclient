@@ -62,7 +62,7 @@ import { el } from './dom.js';
  * @param {{ current: () => string, select: (id: string) => void }} spec
  *   `current` is asked for the id that is active now; `select` is told the
  *   id the hand or the click wants. Selecting must end in `move()`.
- * @returns {{ slide: HTMLElement, move: () => void }}
+ * @returns {{ slide: HTMLElement, move: () => void, destroy: () => void }}
  */
 /**
  * The third argument:
@@ -225,10 +225,18 @@ export function tabStrip(nav, { current, select }, { item = '.nav-item', key = '
      A strip that is painted afresh on every visit (Settings) leaves the old
      one behind; its listener lets go the first time it finds itself gone. */
   const onResize = () => {
-    if (!nav.isConnected) { window.removeEventListener('resize', onResize); return; }
+    if (!nav.isConnected) { destroy(); return; }
     move();
   };
   window.addEventListener('resize', onResize);
 
-  return { slide, move };
+  /* And when its page says it is done with it (2026-09-22): the window held
+     the listener, the listener the strip, and the strip its whole page, so
+     every Settings visit and every profile picked in the editor stayed in
+     memory until the next time the window was resized. The owner calls this
+     when it rebuilds the strip or leaves the page; the check above is only
+     the backstop for one that never says. */
+  const destroy = () => window.removeEventListener('resize', onResize);
+
+  return { slide, move, destroy };
 }

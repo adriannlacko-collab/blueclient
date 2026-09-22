@@ -162,6 +162,19 @@ let nameTimer = null;
    A fresh one per paintEditor() was never disconnected, so every click on a
    card kept another old panel alive (2026-09-06). */
 let thumbObserver = null;
+/* The icon row's strip, which holds a window listener (ui/tabstrip.js). */
+let pickerStrip = null;
+
+/* The panel's two hold-outs let go of it (2026-09-22): the observer and the
+   strip's resize listener each kept the last panel — and through it the
+   page — alive after Profiles was left, until the next visit replaced them.
+   Called before each new panel and when the page is left. */
+function letGoOfEditor() {
+  thumbObserver?.disconnect();
+  thumbObserver = null;
+  pickerStrip?.destroy();
+  pickerStrip = null;
+}
 
 /**
  * The version a new profile is born on: the newest release the shipped jars
@@ -261,6 +274,11 @@ export function render() {
   return page;
 }
 
+/** The page was left: the editor panel is let go of. */
+export function unmounted() {
+  letGoOfEditor();
+}
+
 /* ------------------------------------------------------------------ grid */
 
 /** Selection only swaps classes — rebuilding the grid killed hover mid-click. */
@@ -351,6 +369,7 @@ function selected() {
 
 function paintEditor() {
   const profile = selected();
+  letGoOfEditor();
 
   if (!profile) {
     mount(editor, el('div', { class: 'empty' }, [
@@ -629,6 +648,7 @@ function paintEditor() {
 
   const pickerRow = el('div', { class: 'block-picker' }, swatches);
   const picker = tabStrip(pickerRow, { current: () => chosen, select: choose }, { item: '.block-swatch', key: 'icon' });
+  pickerStrip = picker;
 
   const settingsSelect = settingsField(profile);
 

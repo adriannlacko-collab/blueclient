@@ -287,11 +287,21 @@ window.addEventListener('focus', () => {
   refresh();
 });
 
+/* Only the newest list is placed (2026-09-22), as on Worlds: a focus
+   refresh and the one after a delete can be in flight together, and an
+   older answer landing last put a card just binned back on the page until
+   the next look. A list that failed leaves the page as it was, and is not
+   a rejection nobody catches (the focus refresh has no one waiting). */
+let refreshSeq = 0;
+
 async function refresh() {
+  const seq = ++refreshSeq;
   const [clipsAnswer, shotsAnswer] = await Promise.all([
-    host.clips.list(),
-    host.shots.list()
+    host.clips.list().catch(() => null),
+    host.shots.list().catch(() => null)
   ]);
+  if (seq !== refreshSeq) return;              // a newer list is on its way
+  if (!clipsAnswer || !shotsAnswer) return;
 
   const clips = (clipsAnswer?.clips || []).map((clip) => ({ ...clip, kind: 'clip', id: clip.name }));
   const shots = (shotsAnswer?.shots || []).map((shot) => ({ ...shot, kind: 'shot' }));

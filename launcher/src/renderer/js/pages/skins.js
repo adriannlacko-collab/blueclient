@@ -312,7 +312,9 @@ function openBrowseSkins({ onWorn } = {}) {
     const showing = grid.querySelectorAll('.skin-find__card').length;
     grid.replaceChildren(...skeletons(Math.min(24, showing || 12)));
 
-    const answer = await host.skins.find(text, asked);
+    /* A call that failed outright is the index not answering (2026-09-22):
+       it threw past this, and the placeholders stood in the grid for good. */
+    const answer = await host.skins.find(text, asked).catch(() => null);
     if (mine !== seq) return;                  // a newer keystroke already won
     paint(text, answer);
   }
@@ -430,9 +432,17 @@ function openBrowseSkins({ onWorn } = {}) {
     showReplace(skin, tile);
   }
 
+  /* One keep at a time (2026-09-22): the free slot is read from `slots`,
+     which only learns of a keep when main answers, so a quick second click
+     on a card kept the same skin into two slots. */
+  let keeping = false;
+
   async function keep(index, skin, tile) {
+    if (keeping) return;
     hideReplace();
-    const result = await host.skins.keep(index, { hash: skin.hash, slim: skin.slim, name: skin.name });
+    keeping = true;
+    const result = await host.skins.keep(index, { hash: skin.hash, slim: skin.slim, name: skin.name }).catch(() => null);
+    keeping = false;
     if (!result?.ok) {
       toast(result?.reason || 'That skin could not be kept.', 'error');
       return;
