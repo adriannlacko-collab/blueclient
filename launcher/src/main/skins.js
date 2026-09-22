@@ -102,15 +102,46 @@ async function texture(hash) {
   if (!/^[0-9a-f]{16,128}$/i.test(String(hash || ''))) return null;
 
   const file = path.join(cacheDir, `${hash}.png`);
-  try {
-    return fs.readFileSync(file);
-  } catch { /* not cached yet */ }
+  const kept = readSheet(file);
+  if (kept) return kept;
 
   const bytes = await get(`https://textures.minecraft.net/texture/${hash}`, false);
   if (!bytes) return null;
 
-  try { fs.writeFileSync(file, bytes); } catch { /* cache is best-effort */ }
+  putSheet(file, bytes);
   return bytes;
+}
+
+/* A sheet on disk is only one if it is whole (2026-09-22). Both writers
+   below used to write straight to the hash's own name, and the second only
+   when no file was there — so a sheet cut short by a crash or a full disk
+   stayed cut short for good: every later read handed the renderer half a
+   PNG, and nothing ever fetched it again. A whole PNG ends with its IEND
+   chunk; one that does not is read as not cached, and fetched again. And
+   they are written to a temporary name and renamed into place, like the
+   index above, so a torn write never takes the hash's name at all. */
+function whole(bytes) {
+  return bytes.length >= 12 && bytes.readUInt32BE(bytes.length - 8) === 0x49454e44;
+}
+
+function readSheet(file) {
+  try {
+    const bytes = fs.readFileSync(file);
+    return whole(bytes) ? bytes : null;
+  } catch {
+    return null; // not cached yet
+  }
+}
+
+function putSheet(file, bytes) {
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, bytes);
+    fs.renameSync(tmp, file);
+  } catch {
+    // The cache is best-effort.
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to tidy */ }
+  }
 }
 
 /**
@@ -124,16 +155,14 @@ async function texture(hash) {
 /** The sheet if it is already on disk under this hash, else null; nothing is fetched. */
 function cached(hash) {
   if (!cacheDir || !/^[0-9a-f]{16,128}$/i.test(String(hash || ''))) return null;
-  try { return fs.readFileSync(path.join(cacheDir, `${hash}.png`)); } catch { return null; }
+  return readSheet(path.join(cacheDir, `${hash}.png`));
 }
 
 function keepTexture(hash, bytes) {
   if (!cacheDir || !bytes?.length) return;
   if (!/^[0-9a-f]{16,128}$/i.test(String(hash || ''))) return;
   const file = path.join(cacheDir, `${hash}.png`);
-  try {
-    if (!fs.existsSync(file)) fs.writeFileSync(file, bytes);
-  } catch { /* cache is best-effort */ }
+  if (!readSheet(file)) putSheet(file, bytes);
 }
 
 const asDataUri = (bytes) => `data:image/png;base64,${bytes.toString('base64')}`;
