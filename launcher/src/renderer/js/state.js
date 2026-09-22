@@ -353,7 +353,17 @@ export async function resetSettings() {
   const fresh = await host.settings.reset();
   state.settings = fresh;
   applyTheme('dark');
-  await persist({ profiles: state.profiles });
+  /* The accounts go back in with the profiles (2026-09-22). Main's reset is
+     the whole file back to its defaults — `accounts` included — and only the
+     profiles were written back, so the list stayed in this window's memory
+     and was gone from the disk: the next start opened on "Add account", with
+     the Microsoft sign-in to do again, under a button that says "Profiles,
+     mods and accounts are kept". Which profile launches is kept with them. */
+  await persist({
+    profiles: state.profiles,
+    accounts: { list: state.accounts, active: state.activeAccountId },
+    game: { lastProfile: state.activeProfileId }
+  });
   // A distinct reason: the settings page skips plain 'settings' notifications
   // (its own controls are already up to date), but a reset changes every
   // value at once and does need a full rebuild.
