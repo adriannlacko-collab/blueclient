@@ -310,6 +310,11 @@ class Session extends EventEmitter {
       () => install.ensureClient(root, json, profile.version, stage.fraction),
       stage.waiting
     );
+    // The logging file of a Minecraft whose log4j still expands lookups
+    // (install.ensureLogging, 2026-09-22): null for every version from
+    // 1.18.2 on. One that cannot be fetched is not a reason to refuse the
+    // game — it starts as it always did.
+    const logging = await install.ensureLogging(root, json).catch(() => null);
     this._check();
     stage.done();
 
@@ -441,7 +446,8 @@ class Session extends EventEmitter {
       join: profile.join || null,
       // A world card pressed on Worlds (2026-09-11): straight into that save
       // (--quickPlaySingleplayer, the same family, 1.20 and later).
-      world: profile.world || null
+      world: profile.world || null,
+      logging
     });
 
     // Not here, and measured out rather than left untried (2026-09-10): a

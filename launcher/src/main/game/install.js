@@ -320,6 +320,80 @@ async function ensureClient(root, json, baseVersion, onProgress) {
 }
 
 /**
+ * The logging setup a Minecraft with a Log4Shell-era log4j must run with
+ * (2026-09-22), or null when this one needs none.
+ *
+ * Every version from 1.7 to 1.18.1 ships a log4j (2.0-beta9, 2.8.1, 2.14.1)
+ * that expands `${…}` lookups in the messages it logs unless it is told not
+ * to — a chat line included, which is anyone's on a server to write.
+ * Mojang's answer, in December 2021, was a logging file named in each
+ * version JSON (`logging.client`) that the official launcher passes as
+ * `-Dlog4j.configurationFile`; this launcher never read that block, so those
+ * versions ran on the jar's own logging setup, which says nothing about
+ * lookups before 1.18.1. Checked on the real clients launched from here as
+ * a player named `${sys:java.version}`: 1.8.9 and 1.12.2 printed "Setting
+ * user: 1.8.0_202" (with this file, nothing and the name as typed); 1.18.1's
+ * own setup already printed the name as typed. A `${jndi:…}` in chat is the
+ * same path to the network.
+ *
+ * Mojang's file is fetched as it is (by its hash, into `assets/log_configs`
+ * where the official launcher keeps it) and one thing is changed in the
+ * copy passed to the game: the console, which Mojang writes as XML events
+ * for its own launcher to parse, is written as the plain lines the game
+ * prints without it — the lines the crash reader and the launch log read —
+ * with lookups off (`%msg{nolookups}`; 1.7's file also filters any message
+ * with a lookup in it, for every appender). Versions whose log4j is 2.17 or
+ * later are left exactly as they were: nothing to fix, and their console
+ * is what the companion's notes are read from.
+ *
+ * @returns {Promise<string|null>} the JVM argument, or null
+ */
+async function ensureLogging(root, json) {
+  const client = json.logging && json.logging.client;
+  if (!client || !client.file || !client.file.url || !client.file.id || typeof client.argument !== 'string') return null;
+  if (!lookupsOn(json.libraries)) return null;
+
+  const id = path.basename(String(client.file.id));
+  const theirs = path.join(root, 'assets', 'log_configs', id);
+  await download(client.file.url, theirs, client.file);
+
+  const text = await fsp.readFile(theirs, 'utf8');
+  const sysOut = /(<Console\s+name="SysOut"[^>]*>)([\s\S]*?)(<\/Console>)/.exec(text);
+  let file = theirs;
+  if (sysOut && /<(?:Legacy)?XMLLayout\s*\/>/.test(sysOut[2])) {
+    const plain = text.replace(sysOut[0], `${sysOut[1]}\n            <PatternLayout pattern="${PLAIN_CONSOLE}" />\n        ${sysOut[3]}`);
+    file = path.join(root, 'assets', '.blueclient', 'log_configs', id);
+    const target = file;
+    // One writer per file: every version from 1.12 to 1.18.1 names the same one.
+    await lane('logging:' + target, async () => {
+      if ((await fsp.readFile(target, 'utf8').catch(() => null)) === plain) return;
+      await ensureDir(path.dirname(target));
+      await fsp.writeFile(`${target}.part`, plain, 'utf8');
+      await fsp.rename(`${target}.part`, target);
+    });
+  }
+  return fill(client.argument, { path: file });
+}
+
+/** The console line the game prints with its own logging setup, lookups off. */
+const PLAIN_CONSOLE = '[%d{HH:mm:ss}] [%t/%level]: %msg{nolookups}%n';
+
+/**
+ * Whether the log4j on this version's classpath expands lookups in messages
+ * by default: every 2.x before 2.17 (2.15 and 2.16 still had holes). A
+ * version whose log4j cannot be read is taken as needing the file — the
+ * file is Mojang's and harmless where it is not needed.
+ */
+function lookupsOn(libraries) {
+  const core = (libraries || []).find((lib) => lib && /^org\.apache\.logging\.log4j:log4j-core:/.test(String(lib.name || '')));
+  if (!core) return true;
+  const match = /^(\d+)\.(\d+)/.exec(String(core.name).split(':')[2] || '');
+  if (!match) return true;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major < 2 || (major === 2 && minor < 17);
+}
+
+/**
  * Download every library this platform needs.
  *
  * Returns the classpath in the order the version JSON listed them, with only
@@ -1118,7 +1192,8 @@ function jvmTuning(jvmArgs, major) {
 function buildCommand(options) {
   const {
     json, classpath, clientJar, nativesDir, gameDir, assets,
-    account, memoryMb, versionId, librariesDir, jvmArgs, resolution, join, world, javaMajor
+    account, memoryMb, versionId, librariesDir, jvmArgs, resolution, join, world, javaMajor,
+    logging
   } = options;
 
   // A size is only passed when the player asked for a windowed one; in
@@ -1177,6 +1252,9 @@ function buildCommand(options) {
     '-Xmx' + memoryMb + 'M',
     '-Xms' + Math.min(memoryMb, memoryMb >= 4096 ? 2048 : 512) + 'M',
     ...tuning,
+    // The logging file of a Log4Shell-era version (ensureLogging), its own
+    // property rather than a tuning flag: typed Java options never drop it.
+    ...(logging ? [logging] : []),
     ...jvm,
     json.mainClass,
     ...game,
@@ -1204,6 +1282,7 @@ module.exports = {
   warmJavaIndex,
   resolve,
   ensureClient,
+  ensureLogging,
   ensureLibraries,
   ensureAssets,
   ensureJava,
