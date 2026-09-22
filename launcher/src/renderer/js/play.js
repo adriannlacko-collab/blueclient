@@ -205,10 +205,45 @@ let lastFrame = -1;
    windowed game is not repainting capes and recompositing its glass five
    times a second on the card the game is drawing with. The frame catches
    up the moment the launcher is looked at again. */
-/** Hidden, or a game playing and this window not the one in front. */
+/** Hidden, minimised, or a game playing and this window not the one in front. */
 function resting() {
-  return document.hidden || (gameStatus() === 'playing' && !document.hasFocus());
+  return document.hidden || away || (gameStatus() === 'playing' && !document.hasFocus());
 }
+
+/* Minimised or hidden, as main reports it (2026-09-22). document.hidden
+   cannot say so in this window — backgroundThrottling is off, and that holds
+   the page's visibility at "visible" — so once the world learned to pause
+   there (app.js, paceWorld) this clock was the one thing left drawing in a
+   minimised launcher: five repaints of the glass a second for nobody. app.js
+   hands the word over with the world's. */
+let away = false;
+export function capesAway(gone) {
+  away = !!gone;
+  if (!away && (faces.size || boxes.size)) startClock();
+}
+
+/* Only the faces on screen are repainted (2026-09-22). The Cosmetics page
+   lays out a tile for every cape and the grid scrolls; a face scrolled out
+   of view was repainted and handed to the card five times a second all the
+   same. One observer tells the clock which faces can be seen, a face coming
+   back into view is painted at once with the frame the others show, and
+   when no face and no model cape is on screen the clock stops. */
+const inView = new WeakSet();
+const seen = typeof IntersectionObserver === 'function'
+  ? new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const face = entry.target;
+      if (entry.isIntersecting) {
+        inView.add(face);
+        face.paint(capeFrameNow());
+      } else {
+        inView.delete(face);
+      }
+    }
+    startClock();
+  })
+  : null;
+const visible = (face) => !seen || inView.has(face);
 
 /* While it is resting the clock is STOPPED, not merely quiet (2026-09-22).
    Returning early from the tick still woke the page twenty times a second
@@ -226,24 +261,41 @@ if (typeof document !== 'undefined' && document.addEventListener) {
   document.addEventListener('visibilitychange', () => { if (faces.size || boxes.size) startClock(); });
 }
 
+/* A face or box that has left the page is let go, five seconds after it was
+   made (it may be made before it is put on the page). */
+function sweep(now) {
+  for (const face of faces) {
+    if (!face.isConnected && now - face.born > 5000) { faces.delete(face); if (seen) seen.unobserve(face); }
+  }
+  for (const box of boxes) {
+    if (!box.isConnected && now - box.born > 5000) boxes.delete(box);
+  }
+}
+
+/* The clock wakes once a frame, at the frame's own turn, rather than every
+   fiftieth of a second to ask whether the frame has turned (2026-09-22):
+   five wakes a second instead of twenty, and each change lands on its turn
+   rather than up to fifty milliseconds after it. The frames shown, and when,
+   are the ones capeFrameNow says, as before. */
 function startClock() {
   if (clock || resting()) return;
-  clock = setInterval(() => {
-    if (resting()) { clearInterval(clock); clock = 0; return; }
-    const n = capeFrameNow();
-    if (n === lastFrame) return;
+  sweep(Date.now());
+  let showing = boxes.size > 0;
+  for (const face of faces) if (visible(face)) { showing = true; break; }
+  if (!showing) { lastFrame = -1; return; }
+  clock = setTimeout(tick, CAPE_FRAME_MS - (Date.now() % CAPE_FRAME_MS) + 1);
+}
+
+function tick() {
+  clock = 0;
+  if (resting()) return;
+  const n = capeFrameNow();
+  if (n !== lastFrame) {
     lastFrame = n;
-    const now = Date.now();
-    for (const face of faces) {
-      if (!face.isConnected && now - face.born > 5000) { faces.delete(face); continue; }
-      face.paint(n);
-    }
-    for (const box of boxes) {
-      if (!box.isConnected && now - box.born > 5000) { boxes.delete(box); continue; }
-      box.style.setProperty('--cape-frame', n);
-    }
-    if (!faces.size && !boxes.size) { clearInterval(clock); clock = 0; lastFrame = -1; }
-  }, 50);
+    for (const face of faces) if (face.isConnected && visible(face)) face.paint(n);
+    for (const box of boxes) if (box.isConnected) box.style.setProperty('--cape-frame', n);
+  }
+  startClock();
 }
 
 /** A model's cape box, handed to the clock: it shows the frame on screen now. */
@@ -432,6 +484,7 @@ export function capeFace(cape, colours, unit = 6) {
     canvas.paint(capeFrameNow());
   }).catch(() => {});
   faces.add(canvas);
+  if (seen) seen.observe(canvas);
   startClock();
   return canvas;
 }

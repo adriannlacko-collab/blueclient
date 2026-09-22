@@ -29,6 +29,7 @@ import * as modsPage from './pages/mods.js';
 import * as clipsPage from './pages/clips.js';
 import * as statsPage from './pages/stats.js';
 import { loadBlockIcons } from './blocks.js';
+import { capesAway } from './play.js';
 
 import {
   state, subscribe, notify, initState, setRoute, applyWorldLook,
@@ -702,7 +703,7 @@ function wireHost() {
 
   host.window.onStateChange(({ maximized, away: gone } = {}) => {
     if (typeof maximized === 'boolean') paintMaximize(maximized);
-    if (typeof gone === 'boolean') { away = gone; paceWorld(); }
+    if (typeof gone === 'boolean') { away = gone; paceWorld(); capesAway(gone); }
   });
   host.window.isMaximized().then(paintMaximize);
 
