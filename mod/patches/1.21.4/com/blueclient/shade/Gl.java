@@ -655,7 +655,13 @@ public final class Gl {
             if (blendEnabled instanceof boolean[] perBuffer) {
                blendEnable = perBuffer;
             } else {
-               blendMode = child(value(state, "BLEND"), "mode", "field_5045");
+               // one BlendState, or (26.2) one per draw buffer, all toggling GL_BLEND itself
+               Object blend = value(state, "BLEND");
+               if (blend instanceof Object[] perBuffer) {
+                  blend = perBuffer.length > 0 ? perBuffer[0] : null;
+               }
+
+               blendMode = child(blend, "mode", "field_5045");
             }
 
             depthMode = child(value(state, "DEPTH"), "mode", "field_5074");
