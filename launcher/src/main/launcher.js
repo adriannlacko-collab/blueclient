@@ -456,6 +456,13 @@ class Session extends EventEmitter {
     // run, and a write only the first time a runtime is ever launched.
     const card = await gpu.prefer(java.binary);
 
+    // Once more before the JVM (2026-09-22): the last look was after the
+    // mods stage, and the tune, the shaderpack, the remapped jar's copy and
+    // the card all come after it — a second or more on a new profile — so a
+    // Cancel pressed in that stretch was answered "ok" and the game started
+    // anyway.
+    this._check();
+
     await this._spawn(java.binary, args, gameDir, logDir, {
       profile, account, versionId, instances,
       card,
@@ -632,6 +639,14 @@ class Session extends EventEmitter {
         // 'playing', and then there is nothing to back up.
         worlds.afterSession(context.instances, gameDir, this.startedAt).catch(() => {});
 
+        // Stopped by the player's Cancel before it reached 'playing': not a
+        // crash and not a failure, and nothing to read or log.
+        if (!settled && this._cancelled) {
+          settled = true;
+          reject(new Cancelled());
+          return;
+        }
+
         // What went wrong, if anything did (crashes.js, 2026-09-11): the
         // game's own crash report, an hs_err file, or the JVM's last words,
         // read into one line the row on Home can carry. Null for a clean
@@ -721,7 +736,7 @@ class Session extends EventEmitter {
       // The JVM is up. Give it a moment to fall over on a bad command line
       // before calling the launch a success.
       setTimeout(() => {
-        if (settled || child.exitCode !== null) return;
+        if (settled || child.exitCode !== null || this._cancelled) return;
         settled = true;
         this.status = 'playing';
         this.startedAt = Date.now();
@@ -778,15 +793,25 @@ class Session extends EventEmitter {
     }, onWait);
   }
 
-  /** Stop a launch that has not started its JVM yet. */
+  /**
+   * Stop a launch that has not reached 'playing' yet.
+   *
+   * Including the second after the JVM is started and before the row says
+   * so (2026-09-22): the row still offers Cancel then, and a Cancel that
+   * answered "ok" while the game window went on to open was the one case it
+   * did nothing. The JVM is stopped and the session ends as cancelled, not
+   * as a game that exited before starting (see _spawn).
+   */
   cancel() {
     if (this.status !== 'working') return { ok: false };
     this._cancelled = true;
+    if (this._child) this._child.kill();
     return { ok: true };
   }
 
   /** Close a running game, or give up on one that is still preparing. */
   close() {
+    if (this.status === 'working') return this.cancel();
     if (this._child) {
       this._child.kill();
       this._child = null;
