@@ -53,15 +53,23 @@ def fetch(url, dest, sha1=None):
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(dest.name + ".part")
-    log("GET", url)
-    req = urllib.request.Request(url, headers={"User-Agent": "blueclient-mod-patcher"})
-    with urllib.request.urlopen(req, timeout=300) as r, open(tmp, "wb") as f:
-        shutil.copyfileobj(r, f, 1 << 20)
-    if sha1 is not None and _sha1(tmp) != sha1:
+    for attempt in range(4):
+        log("GET", url)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "blueclient-mod-patcher"})
+            with urllib.request.urlopen(req, timeout=300) as r, open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f, 1 << 20)
+        except OSError as e:
+            if attempt == 3:
+                raise
+            log("retrying after", e)
+            continue
+        if sha1 is None or _sha1(tmp) == sha1:
+            tmp.replace(dest)
+            return dest
         tmp.unlink()
-        raise RuntimeError(f"sha1 mismatch for {url}")
-    tmp.replace(dest)
-    return dest
+        log("sha1 mismatch (a cut-off download?), retrying")
+    raise RuntimeError(f"sha1 mismatch for {url}")
 
 
 def fetch_json(url, dest):
