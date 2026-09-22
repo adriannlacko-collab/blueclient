@@ -256,10 +256,21 @@ function drive(box) {
 
 /* --- the pictures --- */
 
+/* A picture that failed is not kept (2026-09-22): every cache below held
+   the promise, rejection and all, so one frame that did not load the first
+   time left that cape blank — and every set cooked from it — until the
+   launcher was restarted. What failed is dropped and asked for again by
+   the next look; what loaded is kept as before. */
+function keep(map, key, job) {
+  map.set(key, job);
+  job.catch(() => { if (map.get(key) === job) map.delete(key); });
+  return job;
+}
+
 const images = new Map();     // url -> Promise<Image>
 function loadImage(url) {
   if (!images.has(url)) {
-    images.set(url, new Promise((resolve, reject) => {
+    keep(images, url, new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error(`${url} did not load`));
@@ -271,7 +282,7 @@ function loadImage(url) {
 
 const sheets = new Map();     // id -> Promise<Image[]>, the thirty frames
 function frames(id) {
-  if (!sheets.has(id)) sheets.set(id, Promise.all(Array.from({ length: CAPE_FRAMES }, (_, n) => loadImage(capeFrameUrl(id, n)))));
+  if (!sheets.has(id)) keep(sheets, id, Promise.all(Array.from({ length: CAPE_FRAMES }, (_, n) => loadImage(capeFrameUrl(id, n)))));
   return sheets.get(id);
 }
 
@@ -279,7 +290,7 @@ function frames(id) {
 const pixels = new Map();     // url -> Promise<Uint8ClampedArray>
 function readPixels(url) {
   if (!pixels.has(url)) {
-    pixels.set(url, loadImage(url).then((img) => {
+    keep(pixels, url, loadImage(url).then((img) => {
       const canvas = document.createElement('canvas');
       canvas.width = SHEET_W;
       canvas.height = SHEET_H;
@@ -391,7 +402,7 @@ export function cookCape(colours, faceOnly = true) {
     }
     return out;
   })();
-  cooked.set(key, job);
+  keep(cooked, key, job);
   trim(cooked, COOKED_KEPT * 2);
   return job;
 }
@@ -450,7 +461,7 @@ export function capeStrip(cape, colours) {
     const blob = await new Promise((resolve) => strip.toBlob(resolve, 'image/png'));
     return { url: URL.createObjectURL(blob), frames: CAPE_FRAMES, drive };
   })();
-  strips.set(key, job);
+  keep(strips, key, job);
   trim(strips, COOKED_KEPT, (old) => {
     Promise.resolve(old).then((made) => { if (made && made.url) URL.revokeObjectURL(made.url); }, () => {});
   });
