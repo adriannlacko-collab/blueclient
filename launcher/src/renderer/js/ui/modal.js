@@ -128,6 +128,41 @@ export function openModal({ title, subtitle, build, actions, wide = false, xl = 
     window.addEventListener('resize', cutHole);
   }
 
+  /* The spotlight's dim arrives on a box of its own and hands over to the
+     pane's shadow when it lands (2026-09-22) — components.css, .modal__dim,
+     says why. The box is the pane's size, and kept so while the pane can
+     still change (its rows landing); a panel replacing another on the same
+     scrim has its dim already, and arrives without one. */
+  let dim = null;
+  let fit = null;
+  const landed = () => {
+    if (!dim) return;
+    fit?.disconnect();
+    dim.remove();
+    dim = null;
+    dialog.classList.remove('is-arriving');
+  };
+  if (spotlight && !previous) {
+    dim = el('div', { class: 'modal__dim', 'aria-hidden': 'true' });
+    const size = () => {
+      if (!dim) return;
+      const style = getComputedStyle(dialog);
+      dim.style.width = style.width;
+      dim.style.height = style.height;
+    };
+    size();
+    dialog.classList.add('is-arriving');
+    scrim.insertBefore(dim, dialog);
+    fit = new ResizeObserver(size);
+    fit.observe(dialog);
+    dim.addEventListener('animationend', (event) => {
+      if (event.animationName === 'sheet-in') landed();
+    });
+    // An arrival that never ends (reduced motion ends it at once; a hidden
+    // window may not run it) still has to hand over. Well clear of it.
+    setTimeout(landed, 1200);
+  }
+
   /* `initialFocus` is a function so it can name a node the body built a
      moment ago — a panel that opens on a search field should be typing into
      it, not tabbing to it. */
@@ -146,6 +181,7 @@ export function openModal({ title, subtitle, build, actions, wide = false, xl = 
     gone = true;
     document.removeEventListener('keydown', onKeydown, true);
     releaseFocus();
+    landed();
     if (spotlight) {
       window.removeEventListener('resize', cutHole);
       blurLayer?.remove();

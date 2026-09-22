@@ -295,6 +295,17 @@
    * the camera stands so nothing grows through it.
    */
   function generate(camX, camZ) {
+    var steps = generating(camX, camZ), step;
+    while (!(step = steps.next()).done) { /* to the end */ }
+    return step.value;
+  }
+
+  /* The same, a piece at a time (2026-09-22): each `yield` is a place the
+     launcher's build (mount, buildStep) may stop and let the page have its
+     turn — it was one task of 130 to 270 ms, the longest the world took,
+     and a click that landed in it waited that long. The work and its order
+     are exactly generate()'s, so the world is the same block for block. */
+  function* generating(camX, camZ) {
     var blocks = new Uint8Array(W * H * D);
     var height = new Int16Array(W * D);
     var waterAt = new Int16Array(W * D).fill(SEA);
@@ -362,6 +373,7 @@
         }
         raw[z * W + x] = h;
       }
+      if (z % 22 === 21) yield;
     }
     // The clearing: the ground around the camera eases to the camera's own
     // level, so it stands on a flat rather than in a pit or on a mound.
@@ -375,6 +387,7 @@
       }
     }
     var camY = height[camZ * W + camX];
+    yield;
 
     // The village: every piece gets a level plot at the median height of
     // the ground it covers, the way the game cuts a plot for each building,
@@ -471,6 +484,7 @@
       }
       if (!moved) break;
     }
+    yield;
 
     for (z = 0; z < D; z++) {
       for (x = 0; x < W; x++) {
@@ -497,6 +511,7 @@
         }
         for (y = top + 1; y <= wl; y++) blocks[idx(x, y, z)] = WATER;
       }
+      if (z % 44 === 43) yield;
     }
 
     /* One thread of lava down a flank (2026-09-10). It starts high on the
@@ -591,6 +606,8 @@
       return true;
     }
 
+    yield;
+
     // Plants and trees on the grass.
     for (z = 2; z < D - 2; z++) {
       for (x = 2; x < W - 2; x++) {
@@ -625,6 +642,7 @@
           blocks[idx(x, t + 1, z)] = f < 0.35 ? DANDELION : f < 0.7 ? POPPY : f < 0.85 ? BLUET : CORNFLOWER;
         }
       }
+      if (z % 44 === 43) yield;
     }
 
     var world = { blocks: blocks, height: height, camY: camY, shapes: shapes };
@@ -691,6 +709,13 @@
      sideways a few blocks, the way the game's does, so a wall under an eave
      and a room behind a window are dim rather than black. */
   function skylight(blocks) {
+    var steps = lighting(blocks), step;
+    while (!(step = steps.next()).done) { /* to the end */ }
+    return step.value;
+  }
+
+  /* The same in four pieces, for the launcher's build (see generating). */
+  function* lighting(blocks) {
     var sky = new Uint8Array(W * H * D);
     var x, y, z, at;
     for (z = 0; z < D; z++) {
@@ -705,6 +730,7 @@
         }
       }
     }
+    yield;
     var up = W * D;
     for (var pass = 0; pass < 3; pass++) {
       for (y = 1; y < H - 1; y++) {
@@ -723,6 +749,7 @@
           }
         }
       }
+      if (pass < 2) yield;
     }
     return sky;
   }
@@ -1491,6 +1518,7 @@
        rest. */
     var PIECE = 1 << 18;
 
+    var growing = null, lit = null, geometry = null, opaqueSlices = null;
     function buildStep() {
       if (uploads) {
         var next = uploads[0];
@@ -1501,21 +1529,38 @@
         if (!uploads.length) { uploads = null; built = true; }
         return;
       }
-      if (!world) { world = generate(camX, camZ); return; }
-      if (!world.sky) {
-        world.sky = skylight(world.blocks);
-        eye[1] = world.camY + 1 + 1.62 + (options.camY || 0);
+      if (!world) {
+        if (!growing) growing = generating(camX, camZ);
+        var grown = growing.next();
+        if (grown.done) { world = grown.value; growing = null; }
         return;
       }
-      if (!meshing) meshing = mesher(world);
-      if (band < H) { meshing.rows(band, Math.min(H, band + BAND)); band += BAND; return; }
-      uploads = upload(meshing.finish());
-      meshing = null;
-      // Only the ground's height is asked for after this; the blocks and
-      // their light were for the mesh, and are four megabytes.
-      world.blocks = null;
-      world.sky = null;
-      world.shapes = null;
+      if (!geometry && !world.sky) {
+        if (!lit) lit = lighting(world.blocks);
+        var shone = lit.next();
+        if (shone.done) {
+          world.sky = shone.value;
+          lit = null;
+          eye[1] = world.camY + 1 + 1.62 + (options.camY || 0);
+        }
+        return;
+      }
+      if (!geometry) {
+        if (!meshing) meshing = mesher(world);
+        if (band < H) { meshing.rows(band, Math.min(H, band + BAND)); band += BAND; return; }
+        geometry = meshing.finish();
+        meshing = null;
+        // Only the ground's height is asked for after this; the blocks and
+        // their light were for the mesh, and are four megabytes.
+        world.blocks = null;
+        world.sky = null;
+        world.shapes = null;
+        return;
+      }
+      if (!opaqueSlices) { opaqueSlices = arrange(geometry.opaque, eye[0], eye[2]); return; }
+      uploads = upload(geometry, opaqueSlices, arrange(geometry.cutout, eye[0], eye[2]));
+      geometry = null;
+      opaqueSlices = null;
     }
 
     /* Whether the next step is a piece for the card. */
@@ -1539,9 +1584,7 @@
       setTimeout(go, 100);
     }
 
-    function upload(geometry) {
-      var opaque = arrange(geometry.opaque, eye[0], eye[2]);
-      var cutout = arrange(geometry.cutout, eye[0], eye[2]);
+    function upload(geometry, opaque, cutout) {
       // Room on the card now; the contents follow a piece at a time.
       function room(data) {
         var b = gl.createBuffer();
@@ -1967,8 +2010,10 @@
           var cw = vp[3] * x + vp[7] * y + vp[11] * z + vp[15];
           if (cw <= 0.01) { l.el.style.visibility = 'hidden'; return; }
           // The stylesheet starts a label hidden; only a projected one shows.
-          var px = (cx / cw * 0.5 + 0.5) * canvas.clientWidth;
-          var py = (0.5 - cy / cw * 0.5) * canvas.clientHeight;
+          // The canvas's size as measure() last read it: read here, per
+          // label per frame, it laid the page out in the middle of the frame.
+          var px = (cx / cw * 0.5 + 0.5) * cssWidth;
+          var py = (0.5 - cy / cw * 0.5) * cssHeight;
           l.el.style.visibility = 'visible';
           l.el.style.transform = 'translate(' + Math.round(px) + 'px,' + Math.round(py) + 'px) translate(-50%, -100%)';
         });
