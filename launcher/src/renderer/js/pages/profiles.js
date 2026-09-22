@@ -538,12 +538,17 @@ function paintEditor() {
   }
 
   const memValue = el('span', { class: 'profile-editor__memval' });
+  /* Painted as it is dragged, written when it is let go — the way Settings'
+     own Memory slider is (2026-09-22). Every pointer move used to write the
+     whole profile list to main and rebuild every card in the grid when the
+     write came back, a dozen times a second for as long as the handle was
+     held. The keyboard's arrows fire both events, so they still save. */
   const memSlider = el('input', {
     class: 'slider', type: 'range', min: '1024', max: String(maxMb), step: '512',
     value: String(profile.memoryMb ?? globalMb),
     'aria-label': 'Memory for this profile',
-    onInput: (event) => {
-      paintMemory(Number(event.target.value), true);
+    onInput: (event) => paintMemory(Number(event.target.value), true),
+    onChange: (event) => {
       updateProfile(profile.id, { memoryMb: Number(event.target.value) }).then(paint);
     }
   });
@@ -735,8 +740,12 @@ function paintEditor() {
       ]),
       el('button', {
         class: 'quiet-action',
-        onClick: async () => {
-          const copy = await duplicateProfile(profile.id);
+        onClick: async (event) => {
+          /* One copy per press: a double-click made "(copy)" and "(copy 2)". */
+          const button = event.currentTarget;
+          if (button.disabled) return;
+          button.disabled = true;
+          const copy = await duplicateProfile(profile.id).finally(() => { button.disabled = false; });
           if (!copy) return;
           selectedId = copy.id;
           paint();
@@ -916,8 +925,20 @@ async function remove(profile) {
   else toast(`${profile.name} deleted`, 'success');
 }
 
+/* One profile per press (2026-09-22). The version is asked of Mojang's list
+   first, which on a slow or absent network takes seconds — long enough for
+   a second press of New profile to make a second profile. */
+let creating = false;
+
 async function create() {
-  const created = await addProfile({ name: '', version: await newestVersion(), loader: 'fabric' });
+  if (creating) return;
+  creating = true;
+  let created;
+  try {
+    created = await addProfile({ name: '', version: await newestVersion(), loader: 'fabric' });
+  } finally {
+    creating = false;
+  }
   selectedId = created.id;
   paint();
   paintActiveMarks();
