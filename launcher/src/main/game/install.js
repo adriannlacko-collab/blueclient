@@ -1266,9 +1266,17 @@ function buildCommand(options) {
     ? expand(json.arguments.jvm, values, features)
     : ['-Djava.library.path=' + nativesDir, '-cp', full];
 
+  // The old versions' one string is split into its words first and each
+  // word filled after (2026-09-22), the way the vanilla launcher does it.
+  // Filled first and split after, a value with a space in it became two
+  // arguments — an offline name like "Blue Steve", or a Windows account
+  // folder like "C:\Users\John Smith\…" in the game and assets directories —
+  // and every version before 1.13 took the half before the space for the
+  // whole value (the name cut to "Blue", the game in a folder that is not
+  // the profile's) and set the rest aside as arguments it did not know.
   const game = json.arguments && json.arguments.game
     ? expand(json.arguments.game, values, features)
-    : fill(json.minecraftArguments || '', values).split(' ').filter(Boolean);
+    : (json.minecraftArguments || '').split(' ').filter(Boolean).map((word) => fill(word, values));
 
   const tuning = jvmTuning(jvmArgs, javaMajor);
 
