@@ -505,6 +505,14 @@ async function sync({ instanceDir, mods = [], version, loader, companionDir, onP
   // unreachable nothing resolves, so "no longer wanted" would mean every mod
   // on disk: launching offline must not empty the mods folder.
   const keep = new Set(installed);
+  // A companion that could not be replaced because a running game has it
+  // open is still in the folder, and still the launcher's (2026-09-22). Left
+  // out of `installed`, it fell out of the manifest: the retire loop below
+  // tried to delete the jar the game about to start was going to load, and
+  // the next press no longer knew it was ours — so a profile moved on to a
+  // Minecraft with no companion build kept the old one, which Fabric refuses
+  // to start beside (the `companionSkipped` clean-up reads the manifest).
+  if (companionLocked && await exists(path.join(modsDir, COMPANION))) keep.add(COMPANION);
   if (unresolved || unplaced) {
     // Held — except a build this same press has just put a newer one of in
     // the folder (2026-09-22). Sodium updated while Lithium's download
