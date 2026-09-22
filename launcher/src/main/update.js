@@ -40,12 +40,17 @@
  *   { "version": "0.3.0", "url": "https://…/releases/latest/download/…", "notes": "" }
  */
 
-const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { app } = require('electron');
 const { USER_AGENT } = require('./version');
+
+/* `https` is asked for at the first request rather than here (2026-09-22):
+   main reads this file before Electron's ready, for applyStagedAtStart, and
+   loading Node's TLS stack was the largest single require in that stretch —
+   about 6 ms of a start that has nothing to fetch until the window is up. */
+const https = () => require('https');
 
 /**
  * What the updater did, on disk, because nothing else records it.
@@ -117,6 +122,8 @@ let started = false;
 /** The check, once it exists, and when it last ran — both for poke(). */
 let look = null;
 let lastAsked = 0;
+/** The look running right now, if one is (start, `ask`). */
+let looking = null;
 
 function set(patch) {
   const next = { ...state, ...patch };
@@ -144,7 +151,7 @@ function set(patch) {
  */
 function fetchJson(url, { limit = 64 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, {
+    const request = https().get(url, {
       headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
       timeout: 6000
     }, (response) => {
@@ -737,10 +744,14 @@ function download(url, dest, onProgress, depth = 0) {
   return new Promise((resolve, reject) => {
     if (depth > 5) return reject(new Error('too many redirects'));
 
+    // Until the file is open a failure is only a rejection; after, it is
+    // `fail` below, which closes the file first.
+    let onFailure = reject;
+
     // A socket that goes quiet mid-download used to hold the corner at the same
     // percent for ever (2026-09-16): no bytes for a minute is a dead download,
     // and the next 20-minute check starts it again from nothing.
-    const request = https.get(url, { headers: { 'user-agent': USER_AGENT }, timeout: 60_000 }, (response) => {
+    const request = https().get(url, { headers: { 'user-agent': USER_AGENT }, timeout: 60_000 }, (response) => {
       if ([301, 302, 307, 308].includes(response.statusCode) && response.headers.location) {
         response.resume();
         return download(new URL(response.headers.location, url).toString(), dest, onProgress, depth + 1)
@@ -767,11 +778,33 @@ function download(url, dest, onProgress, depth = 0) {
       });
       response.pipe(file);
       file.on('finish', () => file.close(() => resolve(hash.digest('base64'))));
-      file.on('error', reject);
-      response.on('error', reject);
+
+      /* A download that dies part-way closes its file before it says so
+         (2026-09-22). A stalled or dropped socket unpipes the response and
+         leaves the write stream open — nothing ends it — so every failed
+         download kept a handle on its bundle.tar.gz for the life of the
+         launcher, and checkBundle's wipe of the attempt folder, which runs the
+         moment this rejects, could not take a folder with an open file in it
+         on Windows. Measured with a server that goes quiet after the first
+         kilobyte: one handle left open per failure before, none after. */
+      let failed = false;
+      const fail = (error) => {
+        if (failed) return;
+        failed = true;
+        request.destroy();
+        if (file.closed) {
+          reject(error);
+          return;
+        }
+        file.once('close', () => reject(error));
+        file.destroy();
+      };
+      onFailure = fail;
+      file.on('error', fail);
+      response.on('error', fail);
     });
 
-    request.on('error', reject);
+    request.on('error', (error) => onFailure(error));
     request.on('timeout', () => request.destroy(new Error('bundle download stalled')));
   });
 }
@@ -1078,7 +1111,7 @@ function start(onState, currentVersion) {
     return;
   }
 
-  const ask = async () => {
+  const lookOnce = async () => {
     // Nothing to ask once one is on disk waiting, or already coming down.
     if (state.phase === 'ready' || state.phase === 'downloading') return;
     lastAsked = Date.now();
@@ -1090,6 +1123,26 @@ function start(onState, currentVersion) {
     // a pre-release's latest.yml only when the player asked for it.
     autoUpdater.allowPrerelease = earlyWanted();
     autoUpdater.checkForUpdates().catch(() => {});
+  };
+
+  /* One look at a time (2026-09-22). The phase guard above only holds once
+     a download has begun, and before that a look spends up to twelve
+     seconds reading the release list and the manifest — so "Get updates
+     early" flipped in those seconds (recheck, which ignores the focus
+     throttle) started a second checkBundle beside the first. The second
+     wiped the staging folder the first was downloading into, both fetched
+     the same bundle, and whichever failed last set `staged` back to null
+     and the corner to idle over the other's staged copy. A look asked for
+     while one is running now waits for it; recheck looks again after it,
+     so the switch still decides the next look. And a look that throws —
+     the staging folder refused, say — is written to update.log rather than
+     left as an unhandled rejection. */
+  const ask = () => {
+    if (!looking) {
+      looking = lookOnce().finally(() => { looking = null; });
+      looking.catch((error) => note('error', `the look failed: ${error && error.message}`));
+    }
+    return looking;
   };
 
   // A staged bundle goes in when the player is finished with the launcher,
@@ -1132,7 +1185,12 @@ function poke() {
 function recheck() {
   if (!look) return Promise.resolve({ ok: false });
   lastAsked = 0;
-  return Promise.resolve(look()).then(() => ({ ok: true }), () => ({ ok: false }));
+  // A bundle coming down or on disk: nothing a look would do, as before.
+  if (state.phase === 'ready' || state.phase === 'downloading') return Promise.resolve({ ok: true });
+  // A look already under way read the switch before it was flipped: this
+  // one follows it rather than joining it (see `ask` in start).
+  const before = looking ? looking.catch(() => {}) : Promise.resolve();
+  return before.then(() => look()).then(() => ({ ok: true }), () => ({ ok: false }));
 }
 
 /* ---------------------------------------------------------- what's new

@@ -437,6 +437,13 @@ async function refresh({ clientId, account } = {}) {
 
   try {
     const msa = await refreshMicrosoft(clientId, token);
+    /* A renewal answer need not carry a new refresh token — OAuth leaves
+       that to the server (RFC 6749, 6), and the client keeps the one it has
+       (2026-09-22). Without this an answer with none sealed '' into the
+       account, and stale() calls an account with no refresh token never
+       stale: the sign-in would go on being launched with an access token
+       that had run out, and nothing would ever renew it again. */
+    if (msa && !msa.refresh_token) msa.refresh_token = token;
     return await chainToMinecraft(msa);
   } catch (error) {
     if (error instanceof AuthError) throw error;

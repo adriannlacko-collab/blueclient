@@ -39,8 +39,6 @@
  * prove — see `tools/check-crash-report.js`.
  */
 
-const https = require('https');
-const http = require('http');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -196,7 +194,10 @@ function post(url, body) {
     };
 
     try {
-      const client = /^https:/i.test(url) ? https : http;
+      // Required here, at the first send, rather than at the top: main reads
+      // this file before Electron's ready, and the TLS stack is not needed
+      // until the window is up (2026-09-22, as in update.js).
+      const client = /^https:/i.test(url) ? require('https') : require('http');
       const request = client.request(url, {
         method: 'POST',
         headers: {
@@ -285,6 +286,11 @@ function start(theStore, theLauncher) {
   launcher.on('state', (payload) => { onLauncherState(payload).catch(() => {}); });
 
   async function onLauncherState(payload) {
+    /* Nothing is gathered for a ping that will not be sent (2026-09-22):
+       the card's name below is a PowerShell run, and the modules a read of
+       the profile's config, and both used to happen at every game's end or
+       start with "Count me as a player" off — send() said no only after. */
+    if (!enabled()) return;
     if (payload.state === 'idle' && payload.frames) {
       // The sitting that just ended, as the companion measured it (the
       // `frames` block of the launch log), with the card's name. The

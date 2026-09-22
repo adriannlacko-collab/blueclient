@@ -7,6 +7,23 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+/* Node's compile cache, before the thirty-odd modules below are read
+   (2026-09-22). Every start compiled the whole of main's JavaScript again
+   from source — nothing kept a code cache for main (nor, as it turns out,
+   for the page: Chromium's "Code Cache/js" stays empty for scripts read
+   from file://) — and all of it happens before Electron's ready, so before
+   the window can even be asked for. With the cache, V8 is handed the code it
+   made last time: measured under Xvfb, the requires below went from about
+   40 ms to about 25. It is keyed on each file's own contents, so a new
+   app.asar simply compiles once and is cached again; a folder that cannot be
+   written leaves it off and changes nothing else. Beside the settings, where
+   an update's swap never reaches. */
+try {
+  require('module').enableCompileCache?.(path.join(app.getPath('userData'), 'compile-cache'));
+} catch {
+  /* A start without a cache is only a slower start. */
+}
+
 const { Store, defaults, suggestedMemory, migrateToSeven } = require('./store');
 const { Launcher } = require('./launcher');
 const install = require('./game/install');
@@ -58,6 +75,11 @@ if (!app.requestSingleInstanceLock()) {
     // shortcut is the player asking for it (2026-09-22 — 1.9.0's hidden
     // window took the click and focus()ed a window nobody could see).
     if (revealWindow) revealWindow();
+    // And one put away by "When the game starts: Hide" comes back too
+    // (2026-09-22): Electron's focus() does nothing to a hidden window, so
+    // with a game running the shortcut was the one way back to the launcher
+    // and it did nothing at all.
+    if (!win.isVisible()) win.show();
     if (win.isMinimized()) win.restore();
     win.focus();
   });
@@ -293,13 +315,35 @@ function fitZoom() {
   win.webContents.setZoomFactor(stepped);
 }
 
+/**
+ * Whether a window put back where it last was could be reached there
+ * (2026-09-22). The position is saved as the window moves and handed back
+ * to the constructor as it is, and neither Electron nor Windows moves a
+ * window that lands outside every screen — so a launcher last closed on a
+ * second monitor, opened on the laptop alone, came up at x 2400 of a
+ * 1920-wide desktop: running, on the taskbar, and nowhere to be seen, the
+ * one failure a player cannot get past. The window is frameless and is
+ * dragged by its own top edge, so what has to be on a screen is that: a
+ * strip along the top at least 120 pixels wide and 20 deep inside some
+ * display's work area. Otherwise the saved position is left out and the
+ * window opens centred on the primary display, at its saved size.
+ */
+function reachable({ x, y, width }) {
+  const strip = { x, y, width: Math.max(1000, width), height: 40 };
+  return screen.getAllDisplays().some(({ workArea: area }) => {
+    const across = Math.min(strip.x + strip.width, area.x + area.width) - Math.max(strip.x, area.x);
+    const down = Math.min(strip.y + strip.height, area.y + area.height) - Math.max(strip.y, area.y);
+    return across >= 120 && down >= 20;
+  });
+}
+
 function createWindow() {
   const saved = store.get('window') || {};
   const bounds = {
     width: saved.width || 1180,
     height: saved.height || 608
   };
-  if (Number.isInteger(saved.x) && Number.isInteger(saved.y)) {
+  if (Number.isInteger(saved.x) && Number.isInteger(saved.y) && reachable({ x: saved.x, y: saved.y, width: bounds.width })) {
     bounds.x = saved.x;
     bounds.y = saved.y;
   }
@@ -368,6 +412,10 @@ function createWindow() {
   };
   revealWindow = () => reveal();
   win.once('ready-to-show', () => reveal());
+  // The work that waits for Home (startBackground): a moment after the page
+  // has loaded, or at the latest a few seconds from now.
+  win.webContents.once('did-finish-load', () => setTimeout(startBackground, SETTLE_MS));
+  setTimeout(startBackground, SETTLE_CAP_MS);
   win.webContents.on('did-finish-load', () => {
     if (shown) { fitZoom(); return; }
     setTimeout(() => {
@@ -583,7 +631,6 @@ app.whenReady().then(() => {
   // still seeing the old mark on the desktop and in the taskbar). It has to
   // match the appId electron-builder stamps into the installer.
   if (process.platform === 'win32') app.setAppUserModelId('net.blueclient.launcher');
-  refreshShortcuts();
 
   launcher = new Launcher({
     store,
@@ -599,37 +646,17 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
 
-  // Watch for a newer BlueClient and fetch it in the background (src/main/
-  // update.js). Started here rather than in registerIpc because it pushes at
-  // a window, and after createWindow because the first thing it can report —
-  // "already downloaded, restart to update", from a check that ran last
-  // session — would otherwise be sent at nothing.
-  update.start((payload) => send('update:state', payload), VERSION);
-
   // Bringing the launcher to the front is the moment before a player presses
   // Play or closes it, and closing it is when an update goes in. Throttled in
-  // update.js, so this cannot become a request per focus event.
+  // update.js, so this cannot become a request per focus event — and a no-op
+  // until the watching below has started.
   if (win) win.on('focus', () => update.poke());
-
-  // Count this launcher, anonymously, for the admin site (src/main/stats.js).
-  // After the launcher exists because the games it has open are read off it.
-  stats.start(store, launcher);
 
   // The friends list for Home's Friends card (src/main/friends.js): the
   // launcher signs in to the friends backend the way the game does, with
-  // the account's own Mojang-signed documents, and only ever reads.
+  // the account's own Mojang-signed documents, and only ever reads. Wired
+  // now, not with the rest below: the card asks in Home's first second.
   friends.init({ store, launcher });
-
-  // "Playing BlueClient" under the player's name in Discord (src/main/
-  // presence.js). Nothing leaves the machine; it is a pipe to the Discord
-  // already running here, and does nothing on a PC without one.
-  presence.start(launcher);
-
-  // What the first Play press would otherwise have to do at the press —
-  // stamping the shaderpack, reading the jars, renewing an aged sign-in,
-  // giving Mojang's Java the class archive it ships without — done now,
-  // while the player is still looking at Home (launcher.js, 2026-09-10).
-  launcher.prime();
 
   /* A launcher from before sync groups kept every profile's settings in one
      folder (game/settings.js, 2026-09-17): that set becomes a group of every
@@ -669,6 +696,75 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+/* =========================================================================
+   What waits for Home (2026-09-22)
+
+   Everything main started in the same breath as the window used to run on
+   the one thread the window's own loading needs: Electron's UI thread is
+   main's JavaScript thread, and the navigation, the renderer's start and
+   every IPC answer Home's first paint waits on are tasks queued behind it.
+   Measured under Xvfb, the whenReady callback held that thread for about a
+   hundred milliseconds after createWindow — launcher.prime() alone was 27
+   ms of synchronous work before its first await — and on a packaged Windows
+   build update.start() also requires electron-updater, which took about 110
+   ms to load on the machine this was measured on. None of it is needed for
+   the first frame. Moved here, the page's dom-ready came about 60 ms sooner
+   and Home was painted about 50–100 ms sooner (median of ten runs each).
+
+   So it starts once the page has loaded and Home has had a moment to draw
+   itself from what it asked for, and never later than a few seconds after
+   the window was made — a page that never finishes loading (the case
+   createWindow's own timers are for) must not also stop the updater, which
+   is the way out of a broken release (update.js, applyStagedAtStart). The
+   order inside is the order it always had. */
+const SETTLE_MS = 1500;
+const SETTLE_CAP_MS = 6000;
+let settled = false;
+
+function startBackground() {
+  if (settled || !launcher) return;
+  settled = true;
+
+  // The shortcuts' icon (refreshShortcuts): a handful of synchronous shell
+  // calls on Windows, and nothing a first frame needs. Caught, because
+  // whatever a shell folder does must not keep the updater below from
+  // starting.
+  try {
+    refreshShortcuts();
+  } catch (error) {
+    noteCrash('shortcuts', error);
+  }
+
+  // Watch for a newer BlueClient and fetch it in the background (src/main/
+  // update.js). After createWindow because the first thing it can report —
+  // "already downloaded, restart to update", from a check that ran last
+  // session — would otherwise be sent at nothing; Home also asks with get()
+  // whenever it paints the corner, so a late start loses no state.
+  update.start((payload) => send('update:state', payload), VERSION);
+
+  // Count this launcher, anonymously, for the admin site (src/main/stats.js).
+  // After the launcher exists because the games it has open are read off it.
+  stats.start(store, launcher);
+
+  // "Playing BlueClient" under the player's name in Discord (src/main/
+  // presence.js). Nothing leaves the machine; it is a pipe to the Discord
+  // already running here, and does nothing on a PC without one.
+  presence.start(launcher);
+
+  // The offline accounts' own skins the index has not taken yet, offered
+  // again (skinslots.js, syncOwn). Here rather than beside skins.init: the
+  // first fetch() in a run loads Node's HTTP client, some 35 ms on this
+  // thread, and that was landing before the window was even asked for.
+  skinSlots.syncOwn().catch(() => {});
+
+  // What the first Play press would otherwise have to do at the press —
+  // stamping the shaderpack, reading the jars, renewing an aged sign-in,
+  // giving Mojang's Java the class archive it ships without — done now,
+  // while the player is still looking at Home (launcher.js, 2026-09-10). A
+  // press that beats it does each of these itself, as it always could.
+  launcher.prime();
+}
 
 app.on('window-all-closed', () => {
   if (store) store.flush();
@@ -1311,11 +1407,13 @@ function registerIpc() {
 
   // The player's own three, and the one they are wearing. Picking the file
   // happens here as well: the renderer has no filesystem to reach into.
-  skinSlots.init(app.getPath('userData'), store);
-  // An offline account's own skin answers for its name (2026-09-21), and
-  // any upload the index has not taken yet is offered again now.
+  // A Wear renews an aged sign-in through the launcher's own renewal, under
+  // the lane the launch uses, which tells the renderer what it wrote.
+  skinSlots.init(app.getPath('userData'), store, { renew: () => launcher._renew(0) });
+  // An offline account's own skin answers for its name (2026-09-21); any
+  // upload the index has not taken yet is offered again once Home is up
+  // (startBackground).
   skins.ownSkins(skinSlots.ownFor);
-  skinSlots.syncOwn().catch(() => {});
   ipcMain.handle('skins:slots', () => skinSlots.list());
   ipcMain.handle('skins:pick', async (_e, { index, variant } = {}) => {
     const result = await dialog.showOpenDialog(win, {

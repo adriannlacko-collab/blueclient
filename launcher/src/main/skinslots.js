@@ -55,11 +55,14 @@ const MAX_BYTES = 24 * 1024;
 let dir = null;
 let ownDir = null;
 let store = null;
+/** The launcher's own renewal (Launcher._renew), when main hands it over; see currentAccount. */
+let renewal = null;
 
-function init(userData, settings) {
+function init(userData, settings, { renew } = {}) {
   dir = path.join(userData, 'skins', 'slots');
   ownDir = path.join(userData, 'skins', 'own');
   store = settings;
+  renewal = typeof renew === 'function' ? renew : null;
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(ownDir, { recursive: true });
 }
@@ -353,8 +356,25 @@ async function syncOwn() {
  *
  * The same renewal the launch does, for the same reason: a token lasts a day
  * and the launcher is usually opened on the next one.
+ *
+ * And since 2026-09-22 literally the same one, when main has handed it over:
+ * this used to renew by itself, outside the lane the launch and the
+ * ten-minute timer renew under (launcher.js, `_renew`), so a Wear pressed
+ * while either was renewing sent a second refresh beside it and the two
+ * wrote the accounts over each other; and it told the renderer nothing, so
+ * the renderer's copy kept the aged token and its next account write put
+ * that back over the fresh one — the case main's `accounts:changed` exists
+ * for. `_renew` runs under the lane and announces what it wrote.
  */
 async function currentAccount() {
+  if (renewal) {
+    try { await renewal(); } catch { /* a renewal that failed leaves the account as it was */ }
+    const accounts = store.get('accounts') || {};
+    const kept = accounts.list || [];
+    const account = kept.find((a) => a.id === accounts.active) || kept[0];
+    return account?.accessToken ? account : null;
+  }
+
   const accounts = store.get('accounts') || {};
   const kept = accounts.list || [];
   const index = kept.findIndex((a) => a.id === accounts.active);
