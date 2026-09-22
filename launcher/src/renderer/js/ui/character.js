@@ -181,6 +181,27 @@ export function createCharacter({ unit = UNIT, overflow = OVERFLOW, clearance = 
   let slim = false;
   let layered = true;              // 64x64 sheets carry a second layer
   let cape = null;                 // the cape: { url, frames } of its strip, or none
+
+  /* The pose, written whole onto the element that wears it (2026-09-22).
+     The drag, the zoom and the drop were custom properties on the model that
+     its own transform read, and the walk's swings were more of them that the
+     limbs read — and a custom property is inherited, so every one of those
+     writes, once a frame, restyled the model and all eighty-four boxes and
+     faces under it, measured at 1-1.5 ms a frame while the model was dragged.
+     The transforms are the same ones, value for value; each is now set on
+     the one element it moves, and nothing under it is restyled. The swings
+     survive a rebuild the way they always did: a new box takes the one on
+     record. */
+  const pose = { drop: '0px', zoom: '1', yaw: `${rest.toFixed(1)}deg`, swing: {} };
+  let swingers = [];
+  const place = () => {
+    model.style.transform = `translateY(${pose.drop}) scale3d(${pose.zoom}, ${pose.zoom}, ${pose.zoom})`
+      + ` rotateX(-4deg) rotateY(${pose.yaw})`;
+  };
+  const swingAll = () => {
+    for (const box of swingers) box.swing(pose.swing[box.part] || '0deg');
+  };
+
   const rebuild = () => {
     const boxes = [];
     if (cape) boxes.push(buildCape(current, cape));
@@ -198,6 +219,8 @@ export function createCharacter({ unit = UNIT, overflow = OVERFLOW, clearance = 
       else if (part.name === 'head') boxes.push(buildBox(shaped, current, shaped.over, true, true));
     }
     model.replaceChildren(...boxes);
+    swingers = boxes.filter((box) => box.swing);
+    swingAll();
   };
   rebuild();
 
@@ -242,7 +265,8 @@ export function createCharacter({ unit = UNIT, overflow = OVERFLOW, clearance = 
        clearance the stage asked for, so the head is not touching what sits
        above it. */
     const spill = Math.max(0, (32 * next - h) / 2);
-    model.style.setProperty('--drop', `${(spill + clearance).toFixed(1)}px`);
+    pose.drop = `${(spill + clearance).toFixed(1)}px`;
+    place();
     if (next === current) return;
     current = next;
     rebuild();
@@ -261,7 +285,7 @@ export function createCharacter({ unit = UNIT, overflow = OVERFLOW, clearance = 
   let lastX = 0;
   let pointer = null;
 
-  const apply = () => model.style.setProperty('--yaw', `${yaw.toFixed(1)}deg`);
+  const apply = () => { pose.yaw = `${yaw.toFixed(1)}deg`; place(); };
   apply();
 
   /* Scroll zooms the model in and out, between hard bounds so it can neither
@@ -284,7 +308,7 @@ export function createCharacter({ unit = UNIT, overflow = OVERFLOW, clearance = 
      picture a --zoom of 1.06 (0.32.0) the model stood at 106% at launch until
      a double-click wrote its own (Adrian, 2026-09-14: "the skin on the home
      screen is too big, and when you double click it goes back to normal"). */
-  const applyZoom = () => model.style.setProperty('--model-zoom', zoom.toFixed(4));
+  const applyZoom = () => { pose.zoom = zoom.toFixed(4); place(); };
   applyZoom();
 
   const glideZoom = (prev) => {
@@ -380,12 +404,13 @@ export function createCharacter({ unit = UNIT, overflow = OVERFLOW, clearance = 
   const applyWalk = () => {
     for (const name of Object.keys(SWING)) {
       const deg = Math.cos(walkPhase) * SWING[name] * walkAmount;
-      model.style.setProperty(`--swing-${name}`, `${deg.toFixed(2)}deg`);
+      pose.swing[name] = `${deg.toFixed(2)}deg`;
     }
     // The cape: lifted by the walk and flapping once a step (twice a cycle),
     // a quarter turn behind the legs so it trails the stride.
     const cape = (CAPE_LIFT + CAPE_FLAP * Math.sin(2 * walkPhase - Math.PI / 2)) * walkAmount;
-    model.style.setProperty('--swing-cape', `${cape.toFixed(2)}deg`);
+    pose.swing.cape = `${cape.toFixed(2)}deg`;
+    swingAll();
   };
 
   const standStill = () => {
@@ -588,11 +613,18 @@ function buildBox({ name, w, h, d, x, y }, u, faces, overlay, legacy = false) {
     : '';
   // A limb hangs from its pivot; everything else sits where it is put. At zero
   // degrees the two are the same transform, so a still model is unchanged.
-  box.style.transform = PIVOTED.test(name)
-    ? `translate3d(${x * u}px, ${(y - h / 2) * u}px, 0)`
-      + ` rotateX(var(--swing-${name}, 0deg))`
-      + ` translate3d(0, ${(h / 2) * u}px, 0)${scale}`
-    : `translate3d(${x * u}px, ${y * u}px, 0)${scale}`;
+  // A limb's swing is handed to it by the walk (createCharacter's pose).
+  if (PIVOTED.test(name)) {
+    box.part = name;
+    box.swing = (deg) => {
+      box.style.transform = `translate3d(${x * u}px, ${(y - h / 2) * u}px, 0)`
+        + ` rotateX(${deg})`
+        + ` translate3d(0, ${(h / 2) * u}px, 0)${scale}`;
+    };
+    box.swing('0deg');
+  } else {
+    box.style.transform = `translate3d(${x * u}px, ${y * u}px, 0)${scale}`;
+  }
 
   // face: [name, width in skin px, height in skin px, transform]
   const layout = [
@@ -655,11 +687,15 @@ function buildCape(u, { url, frames = 1, drive }) {
     face.style.backgroundPosition = `${-ux * u}px calc(${-uy * u}px - var(--cape-frame, 0) * ${32 * u}px)`;
   });
   const top = -8;                    // the body's top edge, in skin pixels
-  // The rest lean, and the walk's lift and flap on top of it (--swing-cape,
-  // set by applyWalk on the model; 0 while standing).
-  box.style.transform = `translate3d(0, ${top * u}px, ${-(2 + CAPE_BEHIND) * u}px)`
-    + ` rotateX(calc(${-CAPE_LEAN}deg - var(--swing-cape, 0deg)))`
-    + ` translate3d(0, ${(CAPE.h / 2) * u}px, 0)`;
+  // The rest lean, and the walk's lift and flap on top of it (handed over by
+  // applyWalk through the pose; 0 while standing).
+  box.part = 'cape';
+  box.swing = (deg) => {
+    box.style.transform = `translate3d(0, ${top * u}px, ${-(2 + CAPE_BEHIND) * u}px)`
+      + ` rotateX(calc(${-CAPE_LEAN}deg - ${deg}))`
+      + ` translate3d(0, ${(CAPE.h / 2) * u}px, 0)`;
+  };
+  box.swing('0deg');
   if (drive) drive(box);
   return box;
 }
