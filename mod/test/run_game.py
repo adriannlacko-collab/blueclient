@@ -220,7 +220,8 @@ def record(mc, game, run_dir, seconds):
     return out
 
 
-def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0, defaults=False, modules=None):
+def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0, defaults=False, modules=None,
+        quit_at=None):
     run_dir = MOD / "run" / f"{mc}-{label}"
     lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults, modules)
     xvfb, display = start_xvfb()
@@ -266,6 +267,14 @@ def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0,
                 record(mc, game, run_dir, jfr)
             screenshot(display, run_dir / "screen-world.png")
             screenshot(display, run_dir / "screen-tab.png", "TAB")
+            screenshot(display, run_dir / "screen-menu.png", "ESC", "wait:1500")
+            if quit_at:
+                # "Save and Quit to Title": the disconnect makes BlueClient's frame
+                # clock log the session's frame count and frame-time percentiles.
+                screenshot(display, run_dir / "screen-quit.png", f"click:{quit_at}", "wait:4000")
+                until = time.time() + 90
+                while time.time() < until and "Frames:" not in (log.read_text(errors="replace") if log.exists() else ""):
+                    time.sleep(2)
     finally:
         if game.poll() is None:
             game.send_signal(signal.SIGTERM)
@@ -306,6 +315,7 @@ def main():
     ap.add_argument("--scoreboard-pos", default=None, help='JSON pair, e.g. "[0.0, 0.0]"')
     ap.add_argument("--config", default=None, help="JSON merged into the top of blueclient.json")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--quit-at", default=None, help="x,y of the pause menu's Save and Quit button (screen pixels)")
     ap.add_argument("--jfr", type=int, default=0, help="after --seconds, record this many seconds with JFR (alloc.jfr)")
     ap.add_argument("--defaults", action="store_true", help="leave every module at its default (a fresh install)")
     ap.add_argument("--modules", default=None, help='JSON of module switches on top, e.g. {"colour_saturation": true}')
@@ -313,7 +323,8 @@ def main():
     jars = deps.bundle() if args.original else Path(args.jars)
     label = args.label or ("original" if args.original else "patched")
     pos = json.loads(args.scoreboard_pos) if args.scoreboard_pos else None
-    ok = run(args.mc, jars, label, args.seconds, pos, args.config, args.keep, args.jfr, args.defaults, args.modules)
+    ok = run(args.mc, jars, label, args.seconds, pos, args.config, args.keep, args.jfr, args.defaults, args.modules,
+             args.quit_at)
     sys.exit(0 if ok else 1)
 
 
