@@ -286,6 +286,11 @@ function start(theStore, theLauncher) {
   launcher.on('state', (payload) => { onLauncherState(payload).catch(() => {}); });
 
   async function onLauncherState(payload) {
+    /* Nothing is gathered for a ping that will not be sent (2026-09-22):
+       the card's name below is a PowerShell run, and the modules a read of
+       the profile's config, and both used to happen at every game's end or
+       start with "Count me as a player" off — send() said no only after. */
+    if (!enabled()) return;
     if (payload.state === 'idle' && payload.frames) {
       // The sitting that just ended, as the companion measured it (the
       // `frames` block of the launch log), with the card's name. The
