@@ -107,11 +107,15 @@ export function render() {
     onClick: (event) => openProfileMenu(event.currentTarget)
   });
 
+  /* A keystroke filters what is in hand and asks main for nothing
+     (2026-09-22). It went through paint(), which lists the mods folder —
+     every jar's fabric.mod.json read in main — on each letter typed, and on
+     the packs view with none installed listed the packs folder each time. */
   search = el('input', {
     class: 'input',
     placeholder: 'Search mods',
     value: query,
-    onInput: (event) => { query = event.target.value; paint(); }
+    onInput: (event) => { query = event.target.value; paintList(); }
   });
 
   const views = segmented({
@@ -269,9 +273,12 @@ let packsOf = null;
 function paint() {
   if (view === 'packs') {
     paintPacks();
-    // The packs are the scoped profile's (2026-09-17): a different profile
-    // — or a first look — is a different list.
-    if (!packs.length || packsOf !== scopeId) loadPacks();
+    // The packs are the scoped profile's (2026-09-17), and the folder is
+    // asked again on every paint the way the mods folder is (2026-09-22): a
+    // pack dropped in by hand while the page was away was missing until the
+    // profile was switched, because only an empty list or another profile's
+    // was ever asked again. The answer repaints only if it differs.
+    loadPacks();
     return;
   }
   paintMods();
@@ -288,6 +295,12 @@ function paint() {
   // last answer for this profile paints at once above, and the fresh one
   // repaints only if it differs.
   loadLocals();
+}
+
+/** The list on screen again, through the search box, from what is in hand. */
+function paintList() {
+  if (view === 'packs') paintPacks();
+  else paintMods();
 }
 
 function visibleMods() {
@@ -571,8 +584,17 @@ function localOrigin() {
  * says so rather than lying about a rename that did not happen.
  */
 function localCard(mod) {
+  /* One rename at a time (2026-09-22). The file's new name is only known
+     when main answers, so a second press before then — a double-click on
+     the card — asked main to rename a file that no longer had that name,
+     and the card said "That mod could not be switched" over a switch that
+     had worked. */
+  let busy = false;
   async function flip() {
-    const answer = await host.mods.localToggle(scopeId, mod.file, !mod.enabled);
+    if (busy) return;
+    busy = true;
+    const answer = await host.mods.localToggle(scopeId, mod.file, !mod.enabled).catch(() => null);
+    busy = false;
     if (!answer?.ok) {
       return toast(answer?.running
         ? `Close the game on ${scoped()?.name || 'this profile'} first`
@@ -696,7 +718,11 @@ async function loadPacks() {
   const asked = scopeId;
   const answer = await host.packs.list(asked);
   if (seq !== packsSeq || !grid?.isConnected) return;
-  packs = answer?.ok ? answer.packs : [];
+  const next = answer?.ok ? answer.packs : [];
+  // The same packs in the same states is the same page — loadLocals' rule.
+  const shape = (list) => list.map((p) => `${p.file}|${p.enabled}|${p.name}`).join('\n');
+  if (packsOf === asked && shape(next) === shape(packs)) return;
+  packs = next;
   packsOf = asked;
   if (view === 'packs') paintPacks();
 }
