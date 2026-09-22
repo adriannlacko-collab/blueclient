@@ -92,6 +92,23 @@ const NAME_MIN = 3;
 let popularCache = null;            // { at, answer }
 const findCache = new Map();        // lowercase name -> { at, answer }
 
+/* How many answers each of the two search caches holds at most — this one,
+   and lookCache for the searches by look (2026-09-22). An entry was only
+   ever read for FIND_TTL_MS and never taken out, and each answer carries its
+   sheets as data URIs — up to 24 of them, tens of kilobytes a search — so
+   every distinct name or phrase typed into Browse skins stayed in main's
+   memory until the launcher closed. Expired answers now go as a new one is
+   kept, and the oldest past this number. */
+const HELD_MAX = 32;
+
+function hold(cache, key, answer) {
+  const now = Date.now();
+  for (const [held, entry] of cache) if (now - entry.at >= FIND_TTL_MS) cache.delete(held);
+  cache.delete(key);
+  cache.set(key, { at: now, answer });
+  while (cache.size > HELD_MAX) cache.delete(cache.keys().next().value);
+}
+
 async function get(path) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -322,7 +339,7 @@ async function browse(words) {
     }));
 
   const answer = { ok: true, kind: 'look', query: q, results: cards.filter(Boolean) };
-  if (answer.results.length) lookCache.set(q, { at: Date.now(), answer });
+  if (answer.results.length) hold(lookCache, q, answer);
   return answer;
 }
 
@@ -392,7 +409,7 @@ async function find(query, mode = 'player') {
   if (held && Date.now() - held.at < FIND_TTL_MS) return held.answer;
 
   const answer = await lookup(name);
-  if (answer.results.length) findCache.set(key, { at: Date.now(), answer });
+  if (answer.results.length) hold(findCache, key, answer);
   return answer;
 }
 
