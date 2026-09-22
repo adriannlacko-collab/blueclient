@@ -21,17 +21,41 @@ const API = 'https://api.modrinth.com/v2';
 const ICON_MAX_BYTES = 256 * 1024;
 const TIMEOUT_MS = 12000;
 
+/**
+ * One request, the body included, inside the one clock (2026-09-22).
+ *
+ * The clock used to stop when the headers came in, and the body was read
+ * after it with nothing timing it: a Modrinth that answered 200 and then
+ * went quiet mid-body held the caller for good — a Play press on a new mod
+ * sat on "Installing mods" until the launcher was closed, and a renewal
+ * behind the press (game/memo.js keeps one per key) never finished, so that
+ * answer was never renewed again in that run. What comes back is read in
+ * full and answers `json()` and `arrayBuffer()` the way the response did.
+ */
 async function get(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    return await fetch(url, {
+    const res = await fetch(url, {
       headers: { 'User-Agent': UA, Accept: 'application/json' },
       signal: controller.signal
     });
+    return await buffered(res);
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** A response read to its end, shaped like one. */
+async function buffered(res) {
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return {
+    ok: res.ok,
+    status: res.status,
+    headers: res.headers,
+    json: async () => JSON.parse(bytes.toString('utf8')),
+    arrayBuffer: async () => bytes
+  };
 }
 
 /**
@@ -245,12 +269,13 @@ async function byHashes(hashes) {
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       let res;
       try {
-        res = await fetch(`${API}/version_files`, {
+        // Read whole inside the clock, as `get` reads.
+        res = await buffered(await fetch(`${API}/version_files`, {
           method: 'POST',
           headers: { 'User-Agent': UA, Accept: 'application/json', 'Content-Type': 'application/json' },
           body: JSON.stringify({ hashes: list.slice(at, at + 100), algorithm: 'sha1' }),
           signal: controller.signal
-        });
+        }));
       } finally {
         clearTimeout(timer);
       }
