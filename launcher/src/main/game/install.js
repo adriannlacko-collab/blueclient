@@ -436,6 +436,23 @@ async function ensureAssets(root, json, gameDir, onProgress) {
 
   const indexFile = path.join(assetsDir, 'indexes', index.id + '.json');
   await download(index.url, indexFile, index);
+  // Kept out of `indexes/`: that folder is Mojang's and other launchers read
+  // it, and a file of ours in it is a file of ours in their way.
+  const stampFile = path.join(assetsDir, '.blueclient', index.id + '.verified.json');
+
+  // The stamp carries its own sample (2026-09-22), so a press that finds it
+  // standing never reads the index at all: the index of a current Minecraft
+  // is 600 KB of JSON, and reading, parsing and listing it was 5 to 15 ms of
+  // the main process's own thread on every press here — the window stops
+  // answering for that long — to pick two dozen names out of five thousand.
+  // Only an index Mojang names by its hash, which is every one of theirs.
+  const stamp = await readStamp(stampFile);
+  if (stamp && index.sha1 && stamp.sha1 === index.sha1 && Array.isArray(stamp.sample) && stamp.sample.length
+    && await samplePresent(assetsDir, stamp.sample)) {
+    if (onProgress) onProgress(1);
+    return { assetsDir, indexId: index.id, legacyDir: null };
+  }
+
   const parsed = JSON.parse(await fsp.readFile(indexFile, 'utf8'));
 
   const entries = Object.entries(parsed.objects || {});
@@ -448,11 +465,12 @@ async function ensureAssets(root, json, gameDir, onProgress) {
   // Versions before 1.7 need every object copied out by name as well, so the
   // walk is the only thing that puts them there and the stamp is no use.
   const copiesOut = Boolean(parsed.virtual || parsed.map_to_resources);
-  // Kept out of `indexes/`: that folder is Mojang's and other launchers read
-  // it, and a file of ours in it is a file of ours in their way.
-  const stampFile = path.join(assetsDir, '.blueclient', index.id + '.verified.json');
+  const sample = sampleOf(entries);
 
-  if (!copiesOut && await stampHolds(stampFile, index, entries, assetsDir)) {
+  if (!copiesOut && stampHolds(stamp, index, entries) && await samplePresent(assetsDir, sample)) {
+    // A stamp from before it carried a sample gets one, so the next press
+    // takes the short way above.
+    if (!Array.isArray(stamp.sample)) await writeStamp(stampFile, index, entries, sample);
     if (onProgress) onProgress(1);
     return result;
   }
@@ -484,44 +502,57 @@ async function ensureAssets(root, json, gameDir, onProgress) {
 
   // Only a pass that got all the way here: anything that threw took the whole
   // stage with it and left no stamp behind.
-  if (!copiesOut) {
-    await ensureDir(path.dirname(stampFile));
-    await fsp.writeFile(stampFile, JSON.stringify({
-      sha1: index.sha1 || null,
-      count: entries.length,
-      at: Date.now()
-    }), 'utf8').catch(() => {});
-  }
+  if (!copiesOut) await writeStamp(stampFile, index, entries, sample);
 
   return result;
 }
 
-/**
- * Whether a previous pass's stamp still stands.
- *
- * It has to name this exact index and the same number of objects, and a
- * scattered sample of those objects has to still be on disk at the right size.
- */
-async function stampHolds(stampFile, index, entries, assetsDir) {
-  let stamp;
+async function readStamp(stampFile) {
   try {
-    stamp = JSON.parse(await fsp.readFile(stampFile, 'utf8'));
+    const stamp = JSON.parse(await fsp.readFile(stampFile, 'utf8'));
+    return stamp && typeof stamp === 'object' ? stamp : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function writeStamp(stampFile, index, entries, sample) {
+  await ensureDir(path.dirname(stampFile)).catch(() => {});
+  await fsp.writeFile(stampFile, JSON.stringify({
+    sha1: index.sha1 || null,
+    count: entries.length,
+    at: Date.now(),
+    sample
+  }), 'utf8').catch(() => {});
+}
+
+/**
+ * Whether a previous pass's stamp still stands for this index: it has to
+ * name this exact index and the same number of objects. The sample is
+ * looked for on the disk separately (`samplePresent`).
+ */
+function stampHolds(stamp, index, entries) {
   if (!stamp || stamp.count !== entries.length) return false;
-  if ((stamp.sha1 || null) !== (index.sha1 || null)) return false;
-  if (entries.length === 0) return true;
+  return (stamp.sha1 || null) === (index.sha1 || null);
+}
 
-  // Spread the sample across the whole index rather than taking the first
-  // few: a half-copied assets folder usually has a contiguous piece of one.
+/**
+ * The objects the spot check looks at, as `[hash, size]` — spread across the
+ * whole index rather than the first few: a half-copied assets folder usually
+ * has a contiguous piece of one.
+ */
+function sampleOf(entries) {
   const step = Math.max(1, Math.floor(entries.length / ASSET_SPOT_CHECK));
-  const checks = [];
-  for (let i = 0; i < entries.length; i += step) checks.push(entries[i]);
+  const out = [];
+  for (let i = 0; i < entries.length; i += step) out.push([entries[i][1].hash, entries[i][1].size]);
+  return out;
+}
 
-  const found = await Promise.all(checks.map(([, object]) => {
-    const prefix = object.hash.slice(0, 2);
-    return isPresent(path.join(assetsDir, 'objects', prefix, object.hash), null, object.size);
+/** Every object of a sample on disk, at its size. */
+async function samplePresent(assetsDir, sample) {
+  const found = await Promise.all(sample.map(([hash, size]) => {
+    if (typeof hash !== 'string' || hash.length < 3) return false;
+    return isPresent(path.join(assetsDir, 'objects', hash.slice(0, 2), hash), null, size);
   }));
   return found.every(Boolean);
 }
