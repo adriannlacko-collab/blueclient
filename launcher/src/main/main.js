@@ -1367,7 +1367,9 @@ function registerIpc() {
 
   // The player's own three, and the one they are wearing. Picking the file
   // happens here as well: the renderer has no filesystem to reach into.
-  skinSlots.init(app.getPath('userData'), store);
+  // A Wear renews an aged sign-in through the launcher's own renewal, under
+  // the lane the launch uses, which tells the renderer what it wrote.
+  skinSlots.init(app.getPath('userData'), store, { renew: () => launcher._renew(0) });
   // An offline account's own skin answers for its name (2026-09-21), and
   // any upload the index has not taken yet is offered again now.
   skins.ownSkins(skinSlots.ownFor);
