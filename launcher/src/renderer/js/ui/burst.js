@@ -66,6 +66,10 @@ const CENTRE_Y = 380 / 814;
 
 const GLASS = ['rgba(230, 250, 255, 0.92)', 'rgba(120, 225, 255, 0.90)', 'rgba(34, 204, 255, 0.90)'];
 
+/* The shade over each of a glass cube's three faces, lit top to shadowed
+   right — made once rather than as a new string for every face drawn. */
+const SHADE = [1, 0.78, 0.6].map((shade) => `rgba(0, 0, 0, ${(1 - shade) * 0.9})`);
+
 let active = null;
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -170,7 +174,7 @@ export function launchMoment({ name = '' } = {}) {
         const sp = 4 + Math.random() * 7;
         c.vx = Math.cos(a) * sp;
         c.vy = Math.sin(a) * sp - 2.5;
-        c.hist = [];
+        c.hist.length = 0;
       }
     }
 
@@ -200,16 +204,17 @@ export function launchMoment({ name = '' } = {}) {
         y = cy + (y - cy) * settle;
       }
 
-      // The trail: a short ghost behind anything moving fast.
-      c.hist.push([x, y]);
-      if (c.hist.length > 4) c.hist.shift();
-      if (c.hist.length > 2) {
-        const [hx, hy] = c.hist[0];
-        if (Math.hypot(x - hx, y - hy) > 6) {
-          for (let i = 0; i < c.hist.length - 1; i++) {
-            const [gx, gy] = c.hist[i];
-            drawCube(ctx, sheet, c, gx, gy, size, alpha * 0.09 * (i + 1) / c.hist.length);
-          }
+      // The trail: a short ghost behind anything moving fast. The last four
+      // places, x and y in turn, kept in one array per cube and rolled.
+      const hist = c.hist;
+      if (hist.length === 8) hist.copyWithin(0, 2);
+      else hist.length += 2;
+      hist[hist.length - 2] = x;
+      hist[hist.length - 1] = y;
+      const kept = hist.length / 2;
+      if (kept > 2 && Math.hypot(x - hist[0], y - hist[1]) > 6) {
+        for (let i = 0; i < kept - 1; i++) {
+          drawCube(ctx, sheet, c, hist[i * 2], hist[i * 2 + 1], size, alpha * 0.09 * (i + 1) / kept);
         }
       }
       drawCube(ctx, sheet, c, x, y, size, alpha);
@@ -264,19 +269,22 @@ function drawCube(ctx, sheet, c, x, y, s, alpha) {
   }
   const w = s * 0.866;
   const hh = s * 0.5;
-  const face = (a, b, cc, d, e, f, shade) => {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.transform(a, b, cc, d, e, f);
-    ctx.fillStyle = c.glass;
-    ctx.fillRect(0, 0, 1, 1);
-    ctx.fillStyle = `rgba(0, 0, 0, ${(1 - shade) * 0.9})`;
-    ctx.fillRect(0, 0, 1, 1);
-    ctx.restore();
-  };
-  face(w, hh, -w, hh, x, y, 1);            // top, lit
-  face(w, hh, 0, s, x - w, y + hh, 0.78);  // left
-  face(w, -hh, 0, s, x, y + 2 * hh, 0.6);  // right, in shadow
+  glassFace(ctx, c.glass, alpha, w, hh, -w, hh, x, y, SHADE[0]);            // top, lit
+  glassFace(ctx, c.glass, alpha, w, hh, 0, s, x - w, y + hh, SHADE[1]);     // left
+  glassFace(ctx, c.glass, alpha, w, -hh, 0, s, x, y + 2 * hh, SHADE[2]);    // right, in shadow
+}
+
+/* One face of a glass cube: the unit square carried onto the face by the
+   transform, its glass, then its shade over it. */
+function glassFace(ctx, glass, alpha, a, b, cc, d, e, f, shade) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.transform(a, b, cc, d, e, f);
+  ctx.fillStyle = glass;
+  ctx.fillRect(0, 0, 1, 1);
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, 1, 1);
+  ctx.restore();
 }
 
 function light(ctx, x, y, r, w, h, stops) {
@@ -284,8 +292,20 @@ function light(ctx, x, y, r, w, h, stops) {
   for (const [k, colour] of stops) g.addColorStop(k, colour);
   ctx.globalCompositeOperation = 'screen';
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
+  fillAround(ctx, x, y, r, w, h);
   ctx.globalCompositeOperation = 'source-over';
+}
+
+/* Fill only the square round a radial light, not the whole window
+   (2026-09-22). Past its radius every light here is its last stop, which is
+   always fully transparent, and screening nothing over the canvas leaves it
+   as it was — so the pixels are the same, and the two or three full-window
+   gradient fills a frame the moment used to make become as small as the
+   light is. */
+function fillAround(ctx, x, y, r, w, h) {
+  const x0 = Math.max(0, Math.floor(x - r)), y0 = Math.max(0, Math.floor(y - r));
+  const x1 = Math.min(w, Math.ceil(x + r)), y1 = Math.min(h, Math.ceil(y + r));
+  if (x1 > x0 && y1 > y0) ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
 }
 
 /** One thin ring rolling out from the letter — the glass's specular, moving. */
@@ -301,7 +321,7 @@ function ring(ctx, x, y, p, w, h) {
   g.addColorStop(Math.min(1, (r + 24) / R), 'rgba(34, 204, 255, 0)');
   ctx.globalCompositeOperation = 'screen';
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
+  fillAround(ctx, x, y, R, w, h);
   ctx.globalCompositeOperation = 'source-over';
 }
 
