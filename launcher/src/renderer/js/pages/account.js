@@ -115,6 +115,7 @@ function microsoftChoice(done) {
 /** The offline path: a username and nothing else. */
 export function openOfflineAccountModal() {
   let input;
+  let adding = false;
 
   openModal({
     title: 'Add offline account',
@@ -147,6 +148,10 @@ export function openOfflineAccountModal() {
   });
 
   async function submit(close) {
+    /* One account per press (2026-09-22): the account is on the list before
+       the settings are written, so Enter pressed twice found the first press's
+       account and said "already added" over the "Added" of the same name. */
+    if (adding) return;
     const name = input.value.trim();
     if (!name) {
       input.focus();
@@ -157,7 +162,12 @@ export function openOfflineAccountModal() {
       toast('That account is already added', 'error');
       return;
     }
-    await addAccount(name);
+    adding = true;
+    try {
+      await addAccount(name);
+    } finally {
+      adding = false;
+    }
     close();
     toast(`Added ${name}`, 'success');
   }
