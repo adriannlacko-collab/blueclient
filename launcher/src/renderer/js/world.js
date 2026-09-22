@@ -753,10 +753,54 @@
     return 0.16 + 0.84 * Math.pow(f, 1.35);
   }
 
-  function mesh(world) {
+  /* A list of floats written straight into typed arrays (2026-09-22). The
+     mesh used to be pushed onto plain arrays — six and a half million
+     numbers, each face first built as four small arrays of its own — and
+     copied into a Float32Array at the end: most of the half-second the world
+     took to build went there, not into the world. The numbers stored are the
+     same expressions, rounded to a float the same way, so the mesh comes out
+     bit for bit what it was.
+
+     It fills fixed chunks rather than one array that doubles, so nothing is
+     copied until the end and then only once. Every write is a whole quad or
+     a few (42 floats a quad) and never straddles two chunks. */
+  var CHUNK = 42 * 8192;
+  function Floats() { this.chunks = []; this.used = []; this.a = null; this.n = 0; }
+  Floats.prototype.room = function (k) {
+    if (this.a && this.n + k <= CHUNK) return;
+    if (this.a) this.used.push(this.n);
+    this.a = new Float32Array(CHUNK);
+    this.chunks.push(this.a);
+    this.n = 0;
+  };
+  /* Every float written, in the order written, in one array. */
+  Floats.prototype.done = function () {
+    var used = this.used.concat(this.a ? [this.n] : []), total = 0, i;
+    for (i = 0; i < used.length; i++) total += used[i];
+    var out = new Float32Array(total), at = 0;
+    for (i = 0; i < used.length; i++) { out.set(this.chunks[i].subarray(0, used[i]), at); at += used[i]; }
+    return out;
+  };
+
+  var ORDER = [0, 1, 2, 0, 2, 3], FLIPPED = [1, 2, 3, 1, 3, 0];
+  var PLANT_QUADS = [
+    [[0, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]],
+    [[1, 0, 1], [0, 0, 0], [0, 1, 0], [1, 1, 1]],
+    [[0, 0, 1], [1, 0, 0], [1, 1, 0], [0, 1, 1]],
+    [[1, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0]]
+  ];
+  var PLANT_UV = [[0, 1], [1, 1], [1, 0], [0, 0]];
+
+  /**
+   * The mesh, a band of layers at a time: rows(y0, y1) meshes the blocks in
+   * those layers, finish() adds the shapes and hands back the three lists.
+   * Meshing every layer in order and then finishing is the whole mesh, in
+   * the order it has always been built — see mesh() below.
+   */
+  function mesher(world) {
     var blocks = world.blocks, sky = world.sky;
-    var opaque = [], cutout = [], water = [];
-    var x, y, z, d;
+    var opaque = new Floats(), cutout = new Floats(), water = new Floats();
+    var ao = [0, 0, 0, 0];
 
     function at(px, py, pz) {
       if (px < 0 || py < 0 || pz < 0 || px >= W || py >= H || pz >= D) return AIR;
@@ -790,83 +834,78 @@
      * is what stops a pond reading as a stack of blue cubes — the bank's lip
      * stands above it and the shore stays visible.
      */
-    function face(list, px, py, pz, dir, layer, light, ao, top) {
-      var i, v0 = [], base = list.length, tall = top === undefined ? 1 : top;
-      for (i = 0; i < 4; i++) {
-        var c = dir.c[i];
-        v0.push([px + c[0], py + c[1] * tall, pz + c[2], dir.uv[i][0], dir.uv[i][1], layer, light * (ao ? AO[ao[i]] : 1)]);
-      }
+    function face(list, px, py, pz, dir, layer, light, shade, top) {
+      var tall = top === undefined ? 1 : top;
       // Flip the quad's diagonal when the darker corners sit across it, so
       // the shading does not streak — the same trick the game uses.
-      var flip = ao && (ao[0] + ao[2] > ao[1] + ao[3]);
-      var order = flip ? [1, 2, 3, 1, 3, 0] : [0, 1, 2, 0, 2, 3];
-      for (i = 0; i < 6; i++) {
-        var v = v0[order[i]];
-        list.push(v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+      var order = shade && (shade[0] + shade[2] > shade[1] + shade[3]) ? FLIPPED : ORDER;
+      list.room(42);
+      var a = list.a, n = list.n;
+      for (var i = 0; i < 6; i++) {
+        var k = order[i], c = dir.c[k], t = dir.uv[k];
+        a[n++] = px + c[0]; a[n++] = py + c[1] * tall; a[n++] = pz + c[2];
+        a[n++] = t[0]; a[n++] = t[1]; a[n++] = layer;
+        a[n++] = light * (shade ? AO[shade[k]] : 1);
       }
-      return base;
+      list.n = n;
     }
 
     function plant(px, py, pz, layer, light) {
       // Two crossed quads, both sides.
-      var quads = [
-        [[0, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]],
-        [[1, 0, 1], [0, 0, 0], [0, 1, 0], [1, 1, 1]],
-        [[0, 0, 1], [1, 0, 0], [1, 1, 0], [0, 1, 1]],
-        [[1, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0]]
-      ];
-      var uv = [[0, 1], [1, 1], [1, 0], [0, 0]];
-      quads.forEach(function (q) {
-        var order = [0, 1, 2, 0, 2, 3];
+      cutout.room(168);
+      var a = cutout.a, n = cutout.n;
+      for (var q = 0; q < 4; q++) {
         for (var i = 0; i < 6; i++) {
-          var c = q[order[i]], t = uv[order[i]];
-          cutout.push(px + c[0], py + c[1], pz + c[2], t[0], t[1], layer, light);
+          var c = PLANT_QUADS[q][ORDER[i]], t = PLANT_UV[ORDER[i]];
+          a[n++] = px + c[0]; a[n++] = py + c[1]; a[n++] = pz + c[2];
+          a[n++] = t[0]; a[n++] = t[1]; a[n++] = layer; a[n++] = light;
         }
-      });
+      }
+      cutout.n = n;
     }
 
-    for (y = 0; y < H; y++) {
-      for (z = 0; z < D; z++) {
-        for (x = 0; x < W; x++) {
-          var b = blocks[idx(x, y, z)];
-          if (b === AIR || b === SHAPE) continue;
+    function rows(y0, y1) {
+      for (var y = y0; y < y1; y++) {
+        for (var z = 0; z < D; z++) {
+          for (var x = 0; x < W; x++) {
+            var b = blocks[idx(x, y, z)];
+            if (b === AIR || b === SHAPE) continue;
 
-          if (isPlant(b)) {
-            plant(x, y, z, PLANT[b], brightness(lightAt(x, y, z)) * 0.92);
-            continue;
-          }
-
-          for (d = 0; d < 6; d++) {
-            var dir = DIRS[d];
-            var nx = x + dir.n[0], ny = y + dir.n[1], nz = z + dir.n[2];
-            var nb = at(nx, ny, nz);
-
-            if (b === WATER) {
-              if (nb === WATER) continue;
-              if (d === 1) continue;
-              if (nb !== AIR && !isPlant(nb)) continue;
-              var wl = brightness(lightAt(nx, ny, nz)) * dir.shade;
-              // Only the surface is cut down; water with water above it is a
-              // full block, or the body would be sliced at every level.
-              face(water, x, y, z, dir, LAYER.water, wl, null,
-                   at(x, y + 1, z) === WATER ? 1 : SURFACE);
+            if (isPlant(b)) {
+              plant(x, y, z, PLANT[b], brightness(lightAt(x, y, z)) * 0.92);
               continue;
             }
 
-            if (isCutout(b)) {
-              if (nb === b || isOpaque(nb)) continue;
-            } else if (isOpaque(nb)) {
-              continue;
+            for (var d = 0; d < 6; d++) {
+              var dir = DIRS[d];
+              var nx = x + dir.n[0], ny = y + dir.n[1], nz = z + dir.n[2];
+              var nb = at(nx, ny, nz);
+
+              if (b === WATER) {
+                if (nb === WATER) continue;
+                if (d === 1) continue;
+                if (nb !== AIR && !isPlant(nb)) continue;
+                var wl = brightness(lightAt(nx, ny, nz)) * dir.shade;
+                // Only the surface is cut down; water with water above it is a
+                // full block, or the body would be sliced at every level.
+                face(water, x, y, z, dir, LAYER.water, wl, null,
+                     at(x, y + 1, z) === WATER ? 1 : SURFACE);
+                continue;
+              }
+
+              if (isCutout(b)) {
+                if (nb === b || isOpaque(nb)) continue;
+              } else if (isOpaque(nb)) {
+                continue;
+              }
+              var light = brightness(lightAt(nx, ny, nz)) * dir.shade;
+              ao[0] = corner(x, y, z, dir.n, dir.c[0][0], dir.c[0][1], dir.c[0][2]);
+              ao[1] = corner(x, y, z, dir.n, dir.c[1][0], dir.c[1][1], dir.c[1][2]);
+              ao[2] = corner(x, y, z, dir.n, dir.c[2][0], dir.c[2][1], dir.c[2][2]);
+              ao[3] = corner(x, y, z, dir.n, dir.c[3][0], dir.c[3][1], dir.c[3][2]);
+              var layer = FACES[b][dir.side];
+              face(isCutout(b) ? cutout : opaque, x, y, z, dir, layer, light, ao);
             }
-            var light = brightness(lightAt(nx, ny, nz)) * dir.shade;
-            var ao = [
-              corner(x, y, z, dir.n, dir.c[0][0], dir.c[0][1], dir.c[0][2]),
-              corner(x, y, z, dir.n, dir.c[1][0], dir.c[1][1], dir.c[1][2]),
-              corner(x, y, z, dir.n, dir.c[2][0], dir.c[2][1], dir.c[2][2]),
-              corner(x, y, z, dir.n, dir.c[3][0], dir.c[3][1], dir.c[3][2])
-            ];
-            var layer = FACES[b][dir.side];
-            face(isCutout(b) ? cutout : opaque, x, y, z, dir, layer, light, ao);
           }
         }
       }
@@ -891,37 +930,46 @@
           var uv = uvOf(dir, lx, ly, lz);
           v.push([px + lx, py + ly, pz + lz, uv[0], uv[1], layer, l]);
         }
-        var order = [0, 1, 2, 0, 2, 3];
-        for (i = 0; i < 6; i++) { var q = v[order[i]]; list.push(q[0], q[1], q[2], q[3], q[4], q[5], q[6]); }
+        list.room(42);
+        for (i = 0; i < 6; i++) {
+          var q = v[ORDER[i]];
+          for (var k = 0; k < 7; k++) list.a[list.n++] = q[k];
+        }
       }
     }
-    (world.shapes || []).forEach(function (s) {
-      var light = brightness(lightAt(s.x, s.y, s.z));
-      var faces = FACES[s.mat] || FACES[PLANKS];
-      if (s.kind === 'stair') {
-        box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
-        var b0 = [0, 0.5, 0], b1 = [1, 1, 1];
-        if (s.back === 'v') b0[2] = 0.5; else if (s.back === '^') b1[2] = 0.5;
-        else if (s.back === '>') b0[0] = 0.5; else b1[0] = 0.5;
-        box(opaque, s.x, s.y, s.z, b0, b1, faces, light);
-      } else if (s.kind === 'fluid') {
-        // A running fluid: full across, and only as deep as its level.
-        box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, s.h, 1], faces, light);
-      } else if (s.kind === 'slab') {
-        box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
-      } else if (s.kind === 'post') {
-        box(opaque, s.x, s.y, s.z, [6 / 16, 0, 6 / 16], [10 / 16, 1, 10 / 16], faces, light);
-      } else if (s.kind === 'door') {
-        var tile = s.part ? LAYER.door_top : LAYER.door_bottom;
-        box(cutout, s.x, s.y, s.z, [0, 0, 13 / 16], [1, 1, 1], [tile, tile, tile], light);
-      }
-    });
+    function finish() {
+      (world.shapes || []).forEach(function (s) {
+        var light = brightness(lightAt(s.x, s.y, s.z));
+        var faces = FACES[s.mat] || FACES[PLANKS];
+        if (s.kind === 'stair') {
+          box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
+          var b0 = [0, 0.5, 0], b1 = [1, 1, 1];
+          if (s.back === 'v') b0[2] = 0.5; else if (s.back === '^') b1[2] = 0.5;
+          else if (s.back === '>') b0[0] = 0.5; else b1[0] = 0.5;
+          box(opaque, s.x, s.y, s.z, b0, b1, faces, light);
+        } else if (s.kind === 'fluid') {
+          // A running fluid: full across, and only as deep as its level.
+          box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, s.h, 1], faces, light);
+        } else if (s.kind === 'slab') {
+          box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
+        } else if (s.kind === 'post') {
+          box(opaque, s.x, s.y, s.z, [6 / 16, 0, 6 / 16], [10 / 16, 1, 10 / 16], faces, light);
+        } else if (s.kind === 'door') {
+          var tile = s.part ? LAYER.door_top : LAYER.door_bottom;
+          box(cutout, s.x, s.y, s.z, [0, 0, 13 / 16], [1, 1, 1], [tile, tile, tile], light);
+        }
+      });
+      return { opaque: opaque.done(), cutout: cutout.done(), water: water.done() };
+    }
 
-    return {
-      opaque: new Float32Array(opaque),
-      cutout: new Float32Array(cutout),
-      water: new Float32Array(water)
-    };
+    return { rows: rows, finish: finish };
+  }
+
+  /* The whole mesh in one go. */
+  function mesh(world) {
+    var m = mesher(world);
+    m.rows(0, H);
+    return m.finish();
   }
 
   /* ------------------------------------------------------------- textures */
