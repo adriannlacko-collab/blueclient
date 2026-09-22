@@ -260,10 +260,17 @@ function fabricWork(gameVersion) {
   };
 }
 
-/** Renew the Fabric answer for these versions in the background. Never throws. */
+/**
+ * Renew the Fabric answer for these versions in the background. Never throws.
+ *
+ * Only an answer near its keep-by (memo.due, 2026-09-22): this asked
+ * meta.fabricmc.net for every version on every ten-minute beat of `prime`,
+ * a request an hour per version for an answer kept half a day; the press
+ * reads a fresh answer from memory either way.
+ */
 function warmFabric(gameVersions) {
   for (const version of new Set(gameVersions)) {
-    if (!version) continue;
+    if (!version || !memo.due('fabric:' + version, FABRIC_TTL_MS)) continue;
     memo.refresh('fabric:' + version, fabricWork(version));
   }
 }
@@ -677,22 +684,10 @@ function serverDir(home) {
  *   nothing could be fetched and nothing was remembered.
  */
 async function javaManifest(component, fetchIndex = fetchJson) {
-  const indexKey = 'java:index:' + JAVA_PLATFORM;
+  const indexKey = JAVA_INDEX_KEY;
   const manifestKey = 'java:manifest:' + component;
 
-  const readIndex = async () => {
-    const all = await fetchIndex(JAVA_MANIFEST);
-    const platform = (all && all[JAVA_PLATFORM]) || {};
-    // Only the pointer per component; the index carries every platform.
-    const slim = {};
-    for (const [name, builds] of Object.entries(platform)) {
-      const entry = Array.isArray(builds) ? builds[0] : null;
-      if (entry && entry.manifest && entry.manifest.url) {
-        slim[name] = { url: entry.manifest.url, sha1: entry.manifest.sha1 || null, version: (entry.version && entry.version.name) || '' };
-      }
-    }
-    return slim;
-  };
+  const readIndex = () => readJavaIndex(fetchIndex);
 
   let index;
   try {
@@ -728,6 +723,36 @@ async function javaManifest(component, fetchIndex = fetchJson) {
   } catch {
     return kept ? { files: kept.files, url: kept.url, upgraded: false } : null;
   }
+}
+
+const JAVA_INDEX_KEY = 'java:index:' + JAVA_PLATFORM;
+
+/** Mojang's runtime index, cut to this platform's pointer per component. */
+async function readJavaIndex(fetchIndex = fetchJson) {
+  const all = await fetchIndex(JAVA_MANIFEST);
+  const platform = (all && all[JAVA_PLATFORM]) || {};
+  // Only the pointer per component; the index carries every platform.
+  const slim = {};
+  for (const [name, builds] of Object.entries(platform)) {
+    const entry = Array.isArray(builds) ? builds[0] : null;
+    if (entry && entry.manifest && entry.manifest.url) {
+      slim[name] = { url: entry.manifest.url, sha1: entry.manifest.sha1 || null, version: (entry.version && entry.version.name) || '' };
+    }
+  }
+  return slim;
+}
+
+/**
+ * Renew the runtime index behind the press when it is due (2026-09-22).
+ *
+ * `prime` renewed the Fabric answer and the mod lookups and left this one to
+ * the press, so the first press after its half day stood through a round trip
+ * to Mojang in the Java stage — a third of a second from here, up to the
+ * grace on a slow evening. Never throws.
+ */
+function warmJavaIndex() {
+  if (!JAVA_PLATFORM || !memo.due(JAVA_INDEX_KEY, JAVA_INDEX_TTL_MS)) return Promise.resolve();
+  return memo.refresh(JAVA_INDEX_KEY, () => readJavaIndex(fetchJson));
 }
 
 /**
@@ -1145,6 +1170,7 @@ module.exports = {
   listVersions,
   latestFabricLoader,
   warmFabric,
+  warmJavaIndex,
   resolve,
   ensureClient,
   ensureLibraries,

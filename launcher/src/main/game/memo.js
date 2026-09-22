@@ -107,6 +107,21 @@ function stale(key) {
   return entry ? entry.value : undefined;
 }
 
+/**
+ * How long before its keep-by an answer is worth renewing behind the press
+ * (2026-09-22): three of `Launcher.prime`'s ten-minute beats, so a launcher
+ * left open renews each answer before it runs out rather than up to ten
+ * minutes after, when a press may already have met it expired.
+ */
+const DUE_AHEAD_MS = 30 * 60 * 1000;
+
+/** Whether `key` wants asking again: nothing stored, or near its `maxAgeMs`. */
+function due(key, maxAgeMs, aheadMs = DUE_AHEAD_MS) {
+  const entry = data[key];
+  if (!entry || typeof entry.at !== 'number') return true;
+  return Date.now() - entry.at > maxAgeMs - aheadMs;
+}
+
 function set(key, value) {
   if (value === undefined) return value;
   data[key] = { at: Date.now(), value };
@@ -187,4 +202,4 @@ function refresh(key, work) {
   return promise;
 }
 
-module.exports = { init, get, set, stale, remember, refresh };
+module.exports = { init, get, set, stale, due, remember, refresh };

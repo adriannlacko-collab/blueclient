@@ -143,9 +143,17 @@ async function resolveFile(slug, name, version, loader) {
  * after, so the answers `resolveFile` reads are fresh by the time anybody
  * presses Play. One ask per project per version-and-loader, whatever it is
  * called on the Mods page; Fabric API is in the list because every Fabric
- * launch needs it and nothing on the page names it. A key still inside its
- * keep-by is left alone, so this costs nothing on a launcher opened twice in
- * an hour. Never throws.
+ * launch needs it and nothing on the page names it. A key still well inside
+ * its keep-by is left alone (memo.due), so this costs nothing on a launcher
+ * opened twice in an hour. Never throws.
+ *
+ * Since the same day it is also what a press calls first, for its own
+ * profile (Session._run), so the asks it would otherwise make one wave at a
+ * time — and after the Fabric and Java stages — all leave at once. For that
+ * the asks run side by side rather than one after another, and the projects
+ * the remembered answers name as required come too: those are the press's
+ * second wave, which nothing renewed before, and which paid its own round
+ * trip once they had aged out.
  *
  * @param {{ version: string, loader: string, mods: object[] }[]} profiles
  */
@@ -160,13 +168,23 @@ async function warmLookups(profiles) {
       if (mod.since && !companion.atLeast(version, mod.since)) continue;
       slugs.push(mod.slug);
     }
+    const listed = slugs.map((slug) => memo.stale(`mod:${slug}:${version}:${loader}`));
+    const have = new Set(listed.filter((answer) => answer && answer.projectId).map((answer) => answer.projectId));
     for (const slug of slugs) keys.set(`mod:${slug}:${version}:${loader}`, { slug, version, loader });
+    // The required projects the list does not already name, as sync's second
+    // wave would ask for them (by id).
+    for (const answer of listed) {
+      for (const dep of (answer && Array.isArray(answer.dependencies) ? answer.dependencies : [])) {
+        if (!dep || dep.type !== 'required' || !dep.projectId || have.has(dep.projectId)) continue;
+        keys.set(`mod:${dep.projectId}:${version}:${loader}`, { slug: dep.projectId, version, loader });
+      }
+    }
   }
 
-  for (const [key, { slug, version, loader }] of keys) {
-    const fresh = memo.get(key, LOOKUP_TTL_MS);
-    if (fresh && fresh.id) continue;
-    await memo.refresh(key, async () => {
+  await Promise.all([...keys].map(([key, { slug, version, loader }]) => {
+    const known = memo.stale(key);
+    if (known && known.id && !memo.due(key, LOOKUP_TTL_MS)) return null;
+    return memo.refresh(key, async () => {
       const answer = await modrinth.file({ slug, version, loader });
       // A failure is never remembered, and neither is "no build for this
       // Minecraft": the first is Modrinth's evening, the second is an answer
@@ -175,7 +193,7 @@ async function warmLookups(profiles) {
       if (!answer || !answer.ok) throw new Error('not now');
       return answer;
     }).catch(() => {});
-  }
+  }));
 }
 
 /** A remembered answer in today's shape, whatever launcher wrote it. */

@@ -210,6 +210,18 @@ class Session extends EventEmitter {
       );
     }
 
+    // Every remembered answer this press is about to read, renewed now if it
+    // is due, and all at once (2026-09-22). Each stage below renews its own
+    // expired answer behind a grace of its own (memo.remember), which is
+    // right, but they did it in turn: the Fabric loader in resolve, Mojang's
+    // runtime index in the Java stage, each wave of Modrinth lookups in
+    // mods — measured with every answer aged past its keep-by, 1.1 s from
+    // the press to the JVM against 40 ms fresh, three round trips end to
+    // end. Started here, each stage finds its renewal already on the way
+    // (one request per key, memo.refresh) and the three overlap. On a press
+    // whose answers are fresh this is a few lookups in memory.
+    this._prefetch(store, profile, loader);
+
     // A renewal rotates the Microsoft refresh token on disk, so two launches
     // starting together must not both attempt one — the second would present a
     // token the first has already spent. One lane, one renewal.
@@ -475,6 +487,18 @@ class Session extends EventEmitter {
       offline: account.type !== 'microsoft',
       skippedMods: modResult.failed
     };
+  }
+
+  /** See the call in _run. Never throws, never waited for. */
+  _prefetch(store, profile, loader) {
+    const quietly = (promise) => Promise.resolve(promise).catch(() => {});
+    try {
+      if (loader === 'fabric') install.warmFabric([profile.version]);
+      if (!String(store.get('game.javaPath') || '').trim()) quietly(install.warmJavaIndex());
+      quietly(mods.warmLookups([{ version: profile.version, loader, mods: profileMods(store, profile.id) }]));
+    } catch {
+      /* a head start, nothing more */
+    }
   }
 
   /**
@@ -880,6 +904,9 @@ class Launcher extends EventEmitter {
     if (!profiles.length) return;
 
     install.warmFabric(profiles.filter((p) => p.loader === 'fabric').map((p) => p.version));
+    // Mojang's runtime index too (2026-09-22): the one lookup the press
+    // still met expired, once every half day.
+    if (!String(store.get('game.javaPath') || '').trim()) await install.warmJavaIndex();
     await mods.warmLookups(profiles.map((p) => ({
       version: p.version,
       loader: p.loader === 'fabric' ? 'fabric' : 'vanilla',
