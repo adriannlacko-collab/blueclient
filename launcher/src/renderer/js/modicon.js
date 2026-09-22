@@ -21,13 +21,34 @@ const bySlug = new Map();
    of view is cheap to fetch again if it ever comes back. */
 const CACHE_MAX = 200;
 
+/* A lookup that failed is kept only for a little while (2026-09-22). Kept
+   for the session, one network blip at launch meant every card it touched
+   wore its monogram until the launcher was restarted; kept not at all, a
+   list of forty cards with the network down would ask forty times on every
+   paint. Half a minute sits between the two. A call that rejected is a
+   failed answer here, never a rejection handed to a card nobody awaits. */
+const FAILED_MS = 30 * 1000;
+
+/** Main's answer to `ask`, as { ok: false } when the call itself failed. */
+function kept(map, key, ask) {
+  const answer = ask().catch(() => ({ ok: false }));
+  answer.then((result) => {
+    if (result?.ok) return;
+    setTimeout(() => {
+      if (map.get(key)?.answer === answer) map.delete(key);
+    }, FAILED_MS);
+  });
+  return answer;
+}
+
 /** The icon address Modrinth lists for a project, fetched once per slug. */
 export function iconUrlFor(slug) {
   if (!slug) return Promise.resolve('');
   if (!bySlug.has(slug)) {
-    bySlug.set(slug, host.modrinth.project(slug).then((result) => (result?.ok ? result.iconUrl || '' : '')));
+    const answer = kept(bySlug, slug, () => host.modrinth.project(slug));
+    bySlug.set(slug, { answer, url: answer.then((result) => (result?.ok ? result.iconUrl || '' : '')) });
   }
-  return bySlug.get(slug);
+  return bySlug.get(slug).url;
 }
 
 /**
@@ -51,10 +72,10 @@ export async function paintModIcon(img, url, slug) {
         cache.delete(key);
       }
     }
-    cache.set(url, host.modrinth.icon(url));
+    cache.set(url, { answer: kept(cache, url, () => host.modrinth.icon(url)) });
   }
 
-  const result = await cache.get(url);
+  const result = await cache.get(url).answer;
   if (!result?.ok) return '';
   img.src = result.dataUri;
   return url;
