@@ -320,15 +320,29 @@ async function newest(dir, pattern, since) {
   } catch {
     return null;
   }
-  // Crash reports carry their time in the name, so the newest sorts last;
-  // only the last few are worth a stat.
+  // Crash reports carry their time in the name, so the newest sorts last.
+  // An hs_err file does not: it is named by the dead JVM's process id, and
+  // "hs_err_pid12345" sorts before "hs_err_pid6000" — so taking the last few
+  // by name, as this did until 2026-09-22, missed a fresh JVM crash in any
+  // profile that had kept four older ones with larger-sorting ids, and the
+  // row said "see the log" for a crash Java had written down. The files are
+  // ordered by their own time instead (the last 256 by name, a bound on a
+  // folder nobody tidies), and only those written since the launch are read.
   names.sort();
-  for (const name of names.slice(-4).reverse()) {
+  const found = [];
+  for (const name of names.slice(-256)) {
+    try {
+      const stat = await fsp.stat(path.join(dir, name));
+      // A second of slack: the JVM's clock and the file's are not the same one.
+      if (stat.isFile() && stat.mtimeMs >= since - 1000) found.push({ name, stat });
+    } catch {
+      /* gone between the listing and the look */
+    }
+  }
+  found.sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+  for (const { name, stat } of found.slice(0, 4)) {
     const file = path.join(dir, name);
     try {
-      const stat = await fsp.stat(file);
-      // A second of slack: the JVM's clock and the file's are not the same one.
-      if (stat.mtimeMs < since - 1000) continue;
       const handle = await fsp.open(file, 'r');
       try {
         const buffer = Buffer.alloc(Math.min(READ_CAP, stat.size));
