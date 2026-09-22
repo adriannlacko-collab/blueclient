@@ -1978,7 +1978,8 @@
 
 /* Nothing here transitions. Every motion the model has — the drag, the coast,
    the zoom, the walk, the return to rest — is written frame by frame from
-   character.js into --yaw, --model-zoom and the four --swing-* properties, because
+   character.js (since 2026-09-22 as this same transform, inline, and each
+   limb's own, rather than as custom properties every face inherited), because
    they all write the same transform and a CSS transition would restart on
    every one of those frames and then snap when it was taken away. The return
    used to be the exception, a 300ms transition on this class, and it was the

@@ -753,10 +753,54 @@
     return 0.16 + 0.84 * Math.pow(f, 1.35);
   }
 
-  function mesh(world) {
+  /* A list of floats written straight into typed arrays (2026-09-22). The
+     mesh used to be pushed onto plain arrays — six and a half million
+     numbers, each face first built as four small arrays of its own — and
+     copied into a Float32Array at the end: most of the half-second the world
+     took to build went there, not into the world. The numbers stored are the
+     same expressions, rounded to a float the same way, so the mesh comes out
+     bit for bit what it was.
+
+     It fills fixed chunks rather than one array that doubles, so nothing is
+     copied until the end and then only once. Every write is a whole quad or
+     a few (42 floats a quad) and never straddles two chunks. */
+  var CHUNK = 42 * 8192;
+  function Floats() { this.chunks = []; this.used = []; this.a = null; this.n = 0; }
+  Floats.prototype.room = function (k) {
+    if (this.a && this.n + k <= CHUNK) return;
+    if (this.a) this.used.push(this.n);
+    this.a = new Float32Array(CHUNK);
+    this.chunks.push(this.a);
+    this.n = 0;
+  };
+  /* Every float written, in the order written, in one array. */
+  Floats.prototype.done = function () {
+    var used = this.used.concat(this.a ? [this.n] : []), total = 0, i;
+    for (i = 0; i < used.length; i++) total += used[i];
+    var out = new Float32Array(total), at = 0;
+    for (i = 0; i < used.length; i++) { out.set(this.chunks[i].subarray(0, used[i]), at); at += used[i]; }
+    return out;
+  };
+
+  var ORDER = [0, 1, 2, 0, 2, 3], FLIPPED = [1, 2, 3, 1, 3, 0];
+  var PLANT_QUADS = [
+    [[0, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]],
+    [[1, 0, 1], [0, 0, 0], [0, 1, 0], [1, 1, 1]],
+    [[0, 0, 1], [1, 0, 0], [1, 1, 0], [0, 1, 1]],
+    [[1, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0]]
+  ];
+  var PLANT_UV = [[0, 1], [1, 1], [1, 0], [0, 0]];
+
+  /**
+   * The mesh, a band of layers at a time: rows(y0, y1) meshes the blocks in
+   * those layers, finish() adds the shapes and hands back the three lists.
+   * Meshing every layer in order and then finishing is the whole mesh, in
+   * the order it has always been built — see mesh() below.
+   */
+  function mesher(world) {
     var blocks = world.blocks, sky = world.sky;
-    var opaque = [], cutout = [], water = [];
-    var x, y, z, d;
+    var opaque = new Floats(), cutout = new Floats(), water = new Floats();
+    var ao = [0, 0, 0, 0];
 
     function at(px, py, pz) {
       if (px < 0 || py < 0 || pz < 0 || px >= W || py >= H || pz >= D) return AIR;
@@ -790,83 +834,78 @@
      * is what stops a pond reading as a stack of blue cubes — the bank's lip
      * stands above it and the shore stays visible.
      */
-    function face(list, px, py, pz, dir, layer, light, ao, top) {
-      var i, v0 = [], base = list.length, tall = top === undefined ? 1 : top;
-      for (i = 0; i < 4; i++) {
-        var c = dir.c[i];
-        v0.push([px + c[0], py + c[1] * tall, pz + c[2], dir.uv[i][0], dir.uv[i][1], layer, light * (ao ? AO[ao[i]] : 1)]);
-      }
+    function face(list, px, py, pz, dir, layer, light, shade, top) {
+      var tall = top === undefined ? 1 : top;
       // Flip the quad's diagonal when the darker corners sit across it, so
       // the shading does not streak — the same trick the game uses.
-      var flip = ao && (ao[0] + ao[2] > ao[1] + ao[3]);
-      var order = flip ? [1, 2, 3, 1, 3, 0] : [0, 1, 2, 0, 2, 3];
-      for (i = 0; i < 6; i++) {
-        var v = v0[order[i]];
-        list.push(v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+      var order = shade && (shade[0] + shade[2] > shade[1] + shade[3]) ? FLIPPED : ORDER;
+      list.room(42);
+      var a = list.a, n = list.n;
+      for (var i = 0; i < 6; i++) {
+        var k = order[i], c = dir.c[k], t = dir.uv[k];
+        a[n++] = px + c[0]; a[n++] = py + c[1] * tall; a[n++] = pz + c[2];
+        a[n++] = t[0]; a[n++] = t[1]; a[n++] = layer;
+        a[n++] = light * (shade ? AO[shade[k]] : 1);
       }
-      return base;
+      list.n = n;
     }
 
     function plant(px, py, pz, layer, light) {
       // Two crossed quads, both sides.
-      var quads = [
-        [[0, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]],
-        [[1, 0, 1], [0, 0, 0], [0, 1, 0], [1, 1, 1]],
-        [[0, 0, 1], [1, 0, 0], [1, 1, 0], [0, 1, 1]],
-        [[1, 0, 0], [0, 0, 1], [0, 1, 1], [1, 1, 0]]
-      ];
-      var uv = [[0, 1], [1, 1], [1, 0], [0, 0]];
-      quads.forEach(function (q) {
-        var order = [0, 1, 2, 0, 2, 3];
+      cutout.room(168);
+      var a = cutout.a, n = cutout.n;
+      for (var q = 0; q < 4; q++) {
         for (var i = 0; i < 6; i++) {
-          var c = q[order[i]], t = uv[order[i]];
-          cutout.push(px + c[0], py + c[1], pz + c[2], t[0], t[1], layer, light);
+          var c = PLANT_QUADS[q][ORDER[i]], t = PLANT_UV[ORDER[i]];
+          a[n++] = px + c[0]; a[n++] = py + c[1]; a[n++] = pz + c[2];
+          a[n++] = t[0]; a[n++] = t[1]; a[n++] = layer; a[n++] = light;
         }
-      });
+      }
+      cutout.n = n;
     }
 
-    for (y = 0; y < H; y++) {
-      for (z = 0; z < D; z++) {
-        for (x = 0; x < W; x++) {
-          var b = blocks[idx(x, y, z)];
-          if (b === AIR || b === SHAPE) continue;
+    function rows(y0, y1) {
+      for (var y = y0; y < y1; y++) {
+        for (var z = 0; z < D; z++) {
+          for (var x = 0; x < W; x++) {
+            var b = blocks[idx(x, y, z)];
+            if (b === AIR || b === SHAPE) continue;
 
-          if (isPlant(b)) {
-            plant(x, y, z, PLANT[b], brightness(lightAt(x, y, z)) * 0.92);
-            continue;
-          }
-
-          for (d = 0; d < 6; d++) {
-            var dir = DIRS[d];
-            var nx = x + dir.n[0], ny = y + dir.n[1], nz = z + dir.n[2];
-            var nb = at(nx, ny, nz);
-
-            if (b === WATER) {
-              if (nb === WATER) continue;
-              if (d === 1) continue;
-              if (nb !== AIR && !isPlant(nb)) continue;
-              var wl = brightness(lightAt(nx, ny, nz)) * dir.shade;
-              // Only the surface is cut down; water with water above it is a
-              // full block, or the body would be sliced at every level.
-              face(water, x, y, z, dir, LAYER.water, wl, null,
-                   at(x, y + 1, z) === WATER ? 1 : SURFACE);
+            if (isPlant(b)) {
+              plant(x, y, z, PLANT[b], brightness(lightAt(x, y, z)) * 0.92);
               continue;
             }
 
-            if (isCutout(b)) {
-              if (nb === b || isOpaque(nb)) continue;
-            } else if (isOpaque(nb)) {
-              continue;
+            for (var d = 0; d < 6; d++) {
+              var dir = DIRS[d];
+              var nx = x + dir.n[0], ny = y + dir.n[1], nz = z + dir.n[2];
+              var nb = at(nx, ny, nz);
+
+              if (b === WATER) {
+                if (nb === WATER) continue;
+                if (d === 1) continue;
+                if (nb !== AIR && !isPlant(nb)) continue;
+                var wl = brightness(lightAt(nx, ny, nz)) * dir.shade;
+                // Only the surface is cut down; water with water above it is a
+                // full block, or the body would be sliced at every level.
+                face(water, x, y, z, dir, LAYER.water, wl, null,
+                     at(x, y + 1, z) === WATER ? 1 : SURFACE);
+                continue;
+              }
+
+              if (isCutout(b)) {
+                if (nb === b || isOpaque(nb)) continue;
+              } else if (isOpaque(nb)) {
+                continue;
+              }
+              var light = brightness(lightAt(nx, ny, nz)) * dir.shade;
+              ao[0] = corner(x, y, z, dir.n, dir.c[0][0], dir.c[0][1], dir.c[0][2]);
+              ao[1] = corner(x, y, z, dir.n, dir.c[1][0], dir.c[1][1], dir.c[1][2]);
+              ao[2] = corner(x, y, z, dir.n, dir.c[2][0], dir.c[2][1], dir.c[2][2]);
+              ao[3] = corner(x, y, z, dir.n, dir.c[3][0], dir.c[3][1], dir.c[3][2]);
+              var layer = FACES[b][dir.side];
+              face(isCutout(b) ? cutout : opaque, x, y, z, dir, layer, light, ao);
             }
-            var light = brightness(lightAt(nx, ny, nz)) * dir.shade;
-            var ao = [
-              corner(x, y, z, dir.n, dir.c[0][0], dir.c[0][1], dir.c[0][2]),
-              corner(x, y, z, dir.n, dir.c[1][0], dir.c[1][1], dir.c[1][2]),
-              corner(x, y, z, dir.n, dir.c[2][0], dir.c[2][1], dir.c[2][2]),
-              corner(x, y, z, dir.n, dir.c[3][0], dir.c[3][1], dir.c[3][2])
-            ];
-            var layer = FACES[b][dir.side];
-            face(isCutout(b) ? cutout : opaque, x, y, z, dir, layer, light, ao);
           }
         }
       }
@@ -891,37 +930,101 @@
           var uv = uvOf(dir, lx, ly, lz);
           v.push([px + lx, py + ly, pz + lz, uv[0], uv[1], layer, l]);
         }
-        var order = [0, 1, 2, 0, 2, 3];
-        for (i = 0; i < 6; i++) { var q = v[order[i]]; list.push(q[0], q[1], q[2], q[3], q[4], q[5], q[6]); }
+        list.room(42);
+        for (i = 0; i < 6; i++) {
+          var q = v[ORDER[i]];
+          for (var k = 0; k < 7; k++) list.a[list.n++] = q[k];
+        }
       }
     }
-    (world.shapes || []).forEach(function (s) {
-      var light = brightness(lightAt(s.x, s.y, s.z));
-      var faces = FACES[s.mat] || FACES[PLANKS];
-      if (s.kind === 'stair') {
-        box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
-        var b0 = [0, 0.5, 0], b1 = [1, 1, 1];
-        if (s.back === 'v') b0[2] = 0.5; else if (s.back === '^') b1[2] = 0.5;
-        else if (s.back === '>') b0[0] = 0.5; else b1[0] = 0.5;
-        box(opaque, s.x, s.y, s.z, b0, b1, faces, light);
-      } else if (s.kind === 'fluid') {
-        // A running fluid: full across, and only as deep as its level.
-        box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, s.h, 1], faces, light);
-      } else if (s.kind === 'slab') {
-        box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
-      } else if (s.kind === 'post') {
-        box(opaque, s.x, s.y, s.z, [6 / 16, 0, 6 / 16], [10 / 16, 1, 10 / 16], faces, light);
-      } else if (s.kind === 'door') {
-        var tile = s.part ? LAYER.door_top : LAYER.door_bottom;
-        box(cutout, s.x, s.y, s.z, [0, 0, 13 / 16], [1, 1, 1], [tile, tile, tile], light);
-      }
-    });
+    function finish() {
+      (world.shapes || []).forEach(function (s) {
+        var light = brightness(lightAt(s.x, s.y, s.z));
+        var faces = FACES[s.mat] || FACES[PLANKS];
+        if (s.kind === 'stair') {
+          box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
+          var b0 = [0, 0.5, 0], b1 = [1, 1, 1];
+          if (s.back === 'v') b0[2] = 0.5; else if (s.back === '^') b1[2] = 0.5;
+          else if (s.back === '>') b0[0] = 0.5; else b1[0] = 0.5;
+          box(opaque, s.x, s.y, s.z, b0, b1, faces, light);
+        } else if (s.kind === 'fluid') {
+          // A running fluid: full across, and only as deep as its level.
+          box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, s.h, 1], faces, light);
+        } else if (s.kind === 'slab') {
+          box(opaque, s.x, s.y, s.z, [0, 0, 0], [1, 0.5, 1], faces, light);
+        } else if (s.kind === 'post') {
+          box(opaque, s.x, s.y, s.z, [6 / 16, 0, 6 / 16], [10 / 16, 1, 10 / 16], faces, light);
+        } else if (s.kind === 'door') {
+          var tile = s.part ? LAYER.door_top : LAYER.door_bottom;
+          box(cutout, s.x, s.y, s.z, [0, 0, 13 / 16], [1, 1, 1], [tile, tile, tile], light);
+        }
+      });
+      return { opaque: opaque.done(), cutout: cutout.done(), water: water.done() };
+    }
 
-    return {
-      opaque: new Float32Array(opaque),
-      cutout: new Float32Array(cutout),
-      water: new Float32Array(water)
-    };
+    return { rows: rows, finish: finish };
+  }
+
+  /* The whole mesh in one go. */
+  function mesh(world) {
+    var m = mesher(world);
+    m.rows(0, H);
+    return m.finish();
+  }
+
+  /* Slices of the world around the eye (2026-09-22). The camera stands in
+     one place and only turns, so the mesh is cut once into wedges about the
+     eye — SECTORS of them, plus the few blocks round its feet — and a frame
+     draws only the wedges its view can reach. Until today every frame drew
+     all of it, the two thirds behind the camera included, and each wedge is
+     laid out nearest first so a face in front is drawn before the faces it
+     hides and the card can skip them. Nothing else moves: the same quads,
+     byte for byte, only in another order, and a wedge is left out only when
+     its whole box lies outside the view — the picture is the same one. */
+  var SECTORS = 32, RING = 8, RINGS = 16, NEAR = 12;
+
+  function arrange(data, ex, ez) {
+    var quads = data.length / 42, groups = 1 + SECTORS * RINGS;
+    var key = new Uint16Array(quads), start = new Uint32Array(groups + 1);
+    var q, i, o;
+    for (q = 0; q < quads; q++) {
+      o = q * 42;
+      var cx = 0, cz = 0;
+      for (i = 0; i < 6; i++) { cx += data[o + i * 7]; cz += data[o + i * 7 + 2]; }
+      var dx = cx / 6 - ex, dz = cz / 6 - ez, dist = Math.sqrt(dx * dx + dz * dz);
+      var k = 0;
+      if (dist >= NEAR) {
+        var sector = Math.floor((Math.atan2(dx, dz) / (2 * Math.PI) + 0.5) * SECTORS) % SECTORS;
+        k = 1 + sector * RINGS + Math.min(RINGS - 1, Math.floor(dist / RING));
+      }
+      key[q] = k;
+      start[k + 1]++;
+    }
+    for (i = 0; i < groups; i++) start[i + 1] += start[i];
+
+    // The near group, then each wedge from the eye outward.
+    var out = new Float32Array(data.length), next = start.slice(0, groups);
+    for (q = 0; q < quads; q++) {
+      out.set(data.subarray(q * 42, q * 42 + 42), next[key[q]]++ * 42);
+    }
+
+    // Each slice's run of vertices and the box round them, a block larger
+    // all round so the test never trims a face at its edge.
+    function slice(from, to) {
+      var box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+      for (var v = from * 6; v < to * 6; v++) {
+        for (var a = 0; a < 3; a++) {
+          var c = out[v * 7 + a];
+          if (c < box[a]) box[a] = c;
+          if (c > box[a + 3]) box[a + 3] = c;
+        }
+      }
+      for (var b = 0; b < 3; b++) { box[b] -= 1; box[b + 3] += 1; }
+      return { first: from * 6, count: (to - from) * 6, box: box };
+    }
+    var sectors = [];
+    for (var s = 0; s < SECTORS; s++) sectors.push(slice(start[1 + s * RINGS], start[1 + (s + 1) * RINGS]));
+    return { data: out, near: slice(0, start[1]), sectors: sectors };
   }
 
   /* ------------------------------------------------------------- textures */
@@ -1091,6 +1194,13 @@
     '}'
   ].join('\n');
 
+  /* The world shader without its cut-out test, for the solid blocks
+     (2026-09-22). Every texel a solid block wears is opaque, so the test
+     never cut one of them; but a shader that may discard makes the card
+     shade each fragment before it can keep or drop it by depth, and with
+     the test gone the faces hidden behind nearer ones are dropped unshaded. */
+  var SOLID_FS = WORLD_FS.replace("\n  if (t.a < uCut) discard;", '');
+
   var FLAT_VS = [
     '#version 300 es',
     'layout(location=0) in vec3 aPos;',
@@ -1168,12 +1278,21 @@
 
   /* -------------------------------------------------------------- matrices */
 
-  function identity() {
-    return new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  /* Each takes an optional matrix to write into (2026-09-22), so a frame
+     reuses the same few arrays instead of making a dozen new ones thirty
+     times a second. `o` must not be one of the inputs. */
+  function identity(o) {
+    o = o || new Float32Array(16);
+    o.fill(0);
+    o[0] = 1; o[5] = 1; o[10] = 1; o[15] = 1;
+    return o;
   }
 
-  function multiply(a, b) {
-    var o = new Float32Array(16);
+  /* Never written: the model matrix of everything that is not moved. */
+  var IDENTITY = identity();
+
+  function multiply(a, b, o) {
+    o = o || new Float32Array(16);
     for (var c = 0; c < 4; c++) for (var r = 0; r < 4; r++) {
       o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
     }
@@ -1187,8 +1306,8 @@
     return o;
   }
 
-  function translation(x, y, z) {
-    var o = identity();
+  function translation(x, y, z, o) {
+    o = identity(o);
     o[12] = x; o[13] = y; o[14] = z;
     return o;
   }
@@ -1199,14 +1318,16 @@
     return o;
   }
 
-  function rotationX(a) {
-    var c = Math.cos(a), s = Math.sin(a), o = identity();
+  function rotationX(a, o) {
+    var c = Math.cos(a), s = Math.sin(a);
+    o = identity(o);
     o[5] = c; o[6] = s; o[9] = -s; o[10] = c;
     return o;
   }
 
-  function rotationY(a) {
-    var c = Math.cos(a), s = Math.sin(a), o = identity();
+  function rotationY(a, o) {
+    var c = Math.cos(a), s = Math.sin(a);
+    o = identity(o);
     o[0] = c; o[2] = -s; o[8] = s; o[10] = c;
     return o;
   }
@@ -1288,6 +1409,9 @@
     return new Float32Array(out);
   }
 
+  /* The cloud texture's scale: a texel of the 256-wide sheet is twelve blocks. */
+  var CLOUD_SCALE = 12 * 256;
+
   /* --------------------------------------------------------------- mount */
 
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -1303,12 +1427,10 @@
     if (!gl) return null;
 
     var camX = options.camX || Math.floor(W / 2), camZ = options.camZ || Math.floor(D * 0.58);
-    var world = generate(camX, camZ);
-    world.sky = skylight(world.blocks);
-    var geometry = mesh(world);
 
-    // camY lifts the camera off the ground: the title screen looks out from a rise.
-    var eye = [camX + 0.5, world.camY + 1 + 1.62 + (options.camY || 0), camZ + 0.5];
+    // camY lifts the camera off the ground: the title screen looks out from a
+    // rise. The height is the ground's, so it is filled in once the world is.
+    var eye = [camX + 0.5, 0, camZ + 0.5];
     var yaw = (options.yaw !== undefined ? options.yaw : 180) * Math.PI / 180;
     var pitch = (options.pitch !== undefined ? options.pitch : -4) * Math.PI / 180;
     var spin = reduced.matches ? 0 : (options.spin !== undefined ? options.spin : 360 / 210) * Math.PI / 180;
@@ -1317,18 +1439,11 @@
     var beams = options.beams || [];
     var labels = options.labels || [];
 
-    // Anything standing in the world stands on the ground it finds there.
-    function ground(x, z) {
-      x = Math.max(0, Math.min(W - 1, x)); z = Math.max(0, Math.min(D - 1, z));
-      return world.height[z * W + x] + 1;
-    }
-    beams.forEach(function (b) { if (b.y == null) b.y = ground(b.x, b.z); });
-    labels.forEach(function (l) { if (l.y == null) l.y = ground(l.x, l.z) + 1.6; });
-
     var SKY = [0.47, 0.66, 1.0], FOG = [0.76, 0.86, 1.0], VOID = [0.42, 0.55, 0.78];
     var fogRange = options.fog || [52, 92];
 
     var worldProg = program(gl, WORLD_VS, WORLD_FS);
+    var solidProg = program(gl, WORLD_VS, SOLID_FS);
     var flatProg = program(gl, FLAT_VS, FLAT_FS);
     var skyProg = program(gl, SKY_VS, SKY_FS);
 
@@ -1338,9 +1453,6 @@
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       return { b: b, n: data.length / 7 };
     }
-    var opaqueBuf = buffer(geometry.opaque);
-    var cutoutBuf = buffer(geometry.cutout);
-    var waterBuf = buffer(geometry.water);
     var armBuf = buffer(armMesh());
 
     var skyBuf = gl.createBuffer();
@@ -1351,6 +1463,140 @@
 
     var tex = null, sunTex = null, cloudTex = null, beamTex = null, smooth = null;
     var ready = false, running = false, destroyed = false, frame = 0, last = 0;
+
+    /* ------------------------------------------------------------ build */
+
+    /* The world is built after the page's first frame, a piece at a time
+       (2026-09-22). It was built right here, in the mount — generated, lit
+       and meshed in one go, 1.2 s of the main thread measured in the
+       preview — and the launcher mounts the world while it is putting up
+       its shell, so the first frame of Home waited for all of it, and the
+       window with it. Nothing is lost by waiting: the canvas shows nothing
+       until it is ready, and what is under it until then is the still of
+       this same first frame. Each piece is a task of its own, so a click
+       that lands while the world is being built is answered between two.
+       A caller that needs the ground before then — beams and labels stand
+       on it — gets the rest built on the spot, the way it always was. */
+    var world = null, meshing = null, band = 0, built = false, uploads = null;
+    var opaqueBuf = null, cutoutBuf = null, waterBuf = null, sunBuf = null, cloudBuf = null;
+    var BAND = 4;
+
+    /* And handed to the card a megabyte at a time, a frame apart. The mesh
+       is 27 MB, and sent in one go it has to wait for the card to take all
+       of it; at mount the card had nothing else to do, but a second in it
+       is compiling and rasterising the launcher's first frames, and the one
+       call held the main thread until the card was through with those —
+       5.8 s, measured, on the software renderer the preview runs on. A
+       frame apart, each piece goes over while the card gets on with the
+       rest. */
+    var PIECE = 1 << 18;
+
+    function buildStep() {
+      if (uploads) {
+        var next = uploads[0];
+        gl.bindBuffer(gl.ARRAY_BUFFER, next.buf.b);
+        gl.bufferSubData(gl.ARRAY_BUFFER, next.at * 4, next.data.subarray(next.at, next.at + PIECE));
+        next.at += PIECE;
+        if (next.at >= next.data.length) uploads.shift();
+        if (!uploads.length) { uploads = null; built = true; }
+        return;
+      }
+      if (!world) { world = generate(camX, camZ); return; }
+      if (!world.sky) {
+        world.sky = skylight(world.blocks);
+        eye[1] = world.camY + 1 + 1.62 + (options.camY || 0);
+        return;
+      }
+      if (!meshing) meshing = mesher(world);
+      if (band < H) { meshing.rows(band, Math.min(H, band + BAND)); band += BAND; return; }
+      uploads = upload(meshing.finish());
+      meshing = null;
+      // Only the ground's height is asked for after this; the blocks and
+      // their light were for the mesh, and are four megabytes.
+      world.blocks = null;
+      world.sky = null;
+      world.shapes = null;
+    }
+
+    /* Whether the next step is a piece for the card. */
+    function uploading() { return !!uploads; }
+
+    function build() {
+      if (built) return;
+      while (!built) buildStep();
+      whenReady();
+    }
+
+    function buildLater() {
+      if (built || destroyed) return;
+      buildStep();
+      if (built) { whenReady(); return; }
+      if (!uploading()) { setTimeout(buildLater, 0); return; }
+      // A piece a frame; the timer covers a page that is drawing none.
+      var gone = false;
+      var go = function () { if (!gone) { gone = true; buildLater(); } };
+      requestAnimationFrame(go);
+      setTimeout(go, 100);
+    }
+
+    function upload(geometry) {
+      var opaque = arrange(geometry.opaque, eye[0], eye[2]);
+      var cutout = arrange(geometry.cutout, eye[0], eye[2]);
+      // Room on the card now; the contents follow a piece at a time.
+      function room(data) {
+        var b = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, b);
+        gl.bufferData(gl.ARRAY_BUFFER, data.byteLength, gl.STATIC_DRAW);
+        return { b: b, n: data.length / 7 };
+      }
+      opaqueBuf = room(opaque.data); opaqueBuf.near = opaque.near; opaqueBuf.sectors = opaque.sectors;
+      cutoutBuf = room(cutout.data); cutoutBuf.near = cutout.near; cutoutBuf.sectors = cutout.sectors;
+      waterBuf = buffer(geometry.water);
+
+      /* The sun and the cloud sheet stand where they stand: made once, not
+         every frame. The clouds drift by their texture, not their corners. */
+      var sd = 100, ss = 30, el = 22 * Math.PI / 180, az = 62 * Math.PI / 180;
+      var sx = Math.cos(el) * Math.sin(az) * sd, sy = Math.sin(el) * sd, sz = -Math.cos(el) * Math.cos(az) * sd;
+      // A quad facing the camera, spanned by world up and the sun's sideways.
+      var rx = Math.cos(az), rz = Math.sin(az);
+      var ux = -Math.sin(el) * Math.sin(az), uy = Math.cos(el), uz = Math.sin(el) * Math.cos(az);
+      sunBuf = flatBuffer(quad(
+        [sx - rx * ss - ux * ss, sy - uy * ss, sz - rz * ss - uz * ss],
+        [sx + rx * ss - ux * ss, sy - uy * ss, sz + rz * ss - uz * ss],
+        [sx + rx * ss + ux * ss, sy + uy * ss, sz + rz * ss + uz * ss],
+        [sx - rx * ss + ux * ss, sy + uy * ss, sz - rz * ss + uz * ss]));
+
+      // The clouds, a sheet high over everything.
+      var ch = eye[1] + 74, cr = 640;
+      var cloudQuad = quad(
+        [eye[0] - cr, ch, eye[2] + cr], [eye[0] + cr, ch, eye[2] + cr],
+        [eye[0] + cr, ch, eye[2] - cr], [eye[0] - cr, ch, eye[2] - cr]);
+      for (var i = 0; i < 6; i++) {
+        cloudQuad[i * 5 + 3] = cloudQuad[i * 5] / CLOUD_SCALE;
+        cloudQuad[i * 5 + 4] = cloudQuad[i * 5 + 2] / CLOUD_SCALE;
+      }
+      cloudBuf = flatBuffer(cloudQuad);
+      return [{ buf: opaqueBuf, data: opaque.data, at: 0 }, { buf: cutoutBuf, data: cutout.data, at: 0 }];
+    }
+
+    // Anything standing in the world stands on the ground it finds there.
+    function ground(x, z) {
+      build();
+      x = Math.max(0, Math.min(W - 1, x)); z = Math.max(0, Math.min(D - 1, z));
+      return world.height[z * W + x] + 1;
+    }
+    if (beams.length || labels.length) {
+      beams.forEach(function (b) { if (b.y == null) b.y = ground(b.x, b.z); });
+      labels.forEach(function (l) { if (l.y == null) l.y = ground(l.x, l.z) + 1.6; });
+    }
+
+    /* After the first frame: a rAF runs before the frame is drawn, and the
+       task it queues after it. The timer is for a page that is not drawing
+       frames at all, which would otherwise never build its world. */
+    var begun = false;
+    function begin() { if (!begun) { begun = true; setTimeout(buildLater, 0); } }
+    requestAnimationFrame(begin);
+    setTimeout(begin, 1000);
 
     function texture2D(image, repeat) {
       var t = gl.createTexture();
@@ -1418,18 +1664,29 @@
       cloudTex = texture2D(img.clouds, true);
       beamTex = texture2D(img.beam, true);
 
+      whenReady();
+    }).catch(function (error) {
+      if (window.console) console.error('world could not load', error);
+    });
+
+    /* Ready once both halves are in: the textures, and the world they are
+       drawn on. Whichever lands second calls it. */
+    function whenReady() {
+      if (ready || destroyed || !built || !tex) return;
       ready = true;
       canvas.classList.add('is-ready');
       if (running) schedule();
       else draw(0);
       if (options.onReady) options.onReady(api);
-    }).catch(function (error) {
-      if (window.console) console.error('world could not load', error);
-    });
+    }
 
     /* ------------------------------------------------------------ frame */
 
-    var proj = null, view = null, rot = null, width = 0, height = 0;
+    var proj = null, width = 0, height = 0;
+    // The frame's matrices, written in place every frame rather than made anew.
+    var rot = new Float32Array(16), view = new Float32Array(16), sunView = new Float32Array(16);
+    var vp = new Float32Array(16), turnX = new Float32Array(16), turnY = new Float32Array(16);
+    var shiftBy = new Float32Array(16), armAt = new Float32Array(16), planes = new Float32Array(24);
 
     /* Asleep, the drawing buffer is one pixel (2026-09-22): a paused world
        still held its multisampled buffer on the card — the largest thing it
@@ -1439,21 +1696,51 @@
        rebuild (a remount measured a second of the launcher's main thread). */
     var asleep = false;
 
+    /* The canvas's size in CSS pixels, read when it can change rather than
+       on every frame (2026-09-22). Read inside a frame, it made the browser
+       lay the page out there and then if anything had moved since the last
+       one — a page arriving, a slider being dragged — thirty times a second.
+       A ResizeObserver says when the box changes, after the browser has laid
+       it out anyway; the window's resize still covers a change of zoom. */
+    var cssWidth = 0, cssHeight = 0;
+    function measure() {
+      cssWidth = canvas.clientWidth;
+      cssHeight = canvas.clientHeight;
+    }
+
     function resize() {
+      if (!observer) measure();
       var dpr = Math.min(window.devicePixelRatio || 1, options.dpr || 1.5);
-      var w = asleep ? 1 : Math.max(1, Math.round(canvas.clientWidth * dpr));
-      var h = asleep ? 1 : Math.max(1, Math.round(canvas.clientHeight * dpr));
+      var w = asleep ? 1 : Math.max(1, Math.round(cssWidth * dpr));
+      var h = asleep ? 1 : Math.max(1, Math.round(cssHeight * dpr));
       if (w !== width || h !== height) {
         width = w; height = h;
         canvas.width = w; canvas.height = h;
+        gl.viewport(0, 0, w, h);
+        proj = perspective(fov, w / h, 0.05, 400);
       }
-      gl.viewport(0, 0, w, h);
-      proj = perspective(fov, w / h, 0.05, 400);
     }
 
     function camera() {
-      rot = multiply(rotationX(-pitch), rotationY(yaw));
-      view = multiply(rot, translation(-eye[0], -eye[1], -eye[2]));
+      multiply(rotationX(-pitch, turnX), rotationY(yaw, turnY), rot);
+      multiply(rot, translation(-eye[0], -eye[1], -eye[2], shiftBy), view);
+    }
+
+    /* The six planes of the view, from its matrix, to test a slice's box
+       against: a box wholly outside any one of them cannot be seen. */
+    function frustum() {
+      multiply(proj, view, vp);
+      for (var p = 0; p < 6; p++) {
+        var row = p >> 1, sign = p & 1 ? -1 : 1;
+        for (var c = 0; c < 4; c++) planes[p * 4 + c] = vp[c * 4 + 3] + sign * vp[c * 4 + row];
+      }
+    }
+    function inView(box) {
+      for (var p = 0; p < 6; p++) {
+        var a = planes[p * 4], b = planes[p * 4 + 1], c = planes[p * 4 + 2], d = planes[p * 4 + 3];
+        if (a * (a > 0 ? box[3] : box[0]) + b * (b > 0 ? box[4] : box[1]) + c * (c > 0 ? box[5] : box[2]) + d < 0) return false;
+      }
+      return true;
     }
 
     function bindWorld(buf) {
@@ -1475,13 +1762,40 @@
       gl.uniform1f(prog.u.uCut, cut);
       gl.uniform2f(prog.u.uFogRange, fog[0], fog[1]);
       gl.uniform1f(prog.u.uGrade, GRADE);
-      gl.drawArrays(gl.TRIANGLES, 0, buf.n);
+      if (!buf.sectors) { gl.drawArrays(gl.TRIANGLES, 0, buf.n); return; }
+      // The feet first, then every wedge the view reaches, neighbours in one call.
+      if (buf.near.count) gl.drawArrays(gl.TRIANGLES, buf.near.first, buf.near.count);
+      var from = -1, to = -1;
+      for (var s = 0; s <= SECTORS; s++) {
+        var slice = s < SECTORS ? buf.sectors[s] : null;
+        if (slice && slice.count && inView(slice.box)) {
+          if (from < 0) from = slice.first;
+          to = slice.first + slice.count;
+        } else if (slice && !slice.count) {
+          continue;
+        } else if (from >= 0) {
+          gl.drawArrays(gl.TRIANGLES, from, to - from);
+          from = -1;
+        }
+      }
     }
 
+    function flatBuffer(data) {
+      var b = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, b);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      return { b: b, n: data.length / 5 };
+    }
+
+    /* `data` is a buffer made once (flatBuffer), or a Float32Array sent this frame. */
     function flat(data, texture, model, color, shift, fog) {
       gl.useProgram(flatProg.p);
-      gl.bindBuffer(gl.ARRAY_BUFFER, flatBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      if (data instanceof Float32Array) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, flatBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      } else {
+        gl.bindBuffer(gl.ARRAY_BUFFER, data.b);
+      }
       gl.enableVertexAttribArray(0);
       gl.enableVertexAttribArray(1);
       gl.disableVertexAttribArray(2);
@@ -1497,7 +1811,7 @@
       gl.uniform2f(flatProg.u.uShift, shift[0], shift[1]);
       gl.uniform3f(flatProg.u.uFog, FOG[0], FOG[1], FOG[2]);
       gl.uniform2f(flatProg.u.uFogRange, fog[0], fog[1]);
-      gl.drawArrays(gl.TRIANGLES, 0, data.length / 5);
+      gl.drawArrays(gl.TRIANGLES, 0, data instanceof Float32Array ? data.length / 5 : data.n);
     }
 
     function quad(a, b, c, d) {
@@ -1523,7 +1837,7 @@
         faces.forEach(function (f) {
           var data = quad(f[0], f[1], f[2], f[3]);
           for (var i = 0; i < 6; i++) data[i * 5 + 4] *= reps;
-          flat(data, beamTex, identity(), [col[0], col[1], col[2], alpha], shift, [220, 320]);
+          flat(data, beamTex, IDENTITY, [col[0], col[1], col[2], alpha], shift, [220, 320]);
         });
       }
       column(0.14, 0.96);
@@ -1567,68 +1881,60 @@
       // The sun, square and far off to the east, added onto the sky.
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-      var sunView = multiply(rot, identity());
-      var sd = 100, ss = 30, el = 22 * Math.PI / 180, az = 62 * Math.PI / 180;
-      var sx = Math.cos(el) * Math.sin(az) * sd, sy = Math.sin(el) * sd, sz = -Math.cos(el) * Math.cos(az) * sd;
-      // A quad facing the camera, spanned by world up and the sun's sideways.
-      var rx = Math.cos(az), rz = Math.sin(az);
-      var ux = -Math.sin(el) * Math.sin(az), uy = Math.cos(el), uz = Math.sin(el) * Math.cos(az);
-      var sunQuad = quad(
-        [sx - rx * ss - ux * ss, sy - uy * ss, sz - rz * ss - uz * ss],
-        [sx + rx * ss - ux * ss, sy - uy * ss, sz + rz * ss - uz * ss],
-        [sx + rx * ss + ux * ss, sy + uy * ss, sz + rz * ss + uz * ss],
-        [sx - rx * ss + ux * ss, sy + uy * ss, sz - rz * ss + uz * ss]);
+      multiply(rot, IDENTITY, sunView);
       var savedView = view;
       view = sunView;
-      flat(sunQuad, sunTex, identity(), [1, 1, 1, 1], [0, 0], [9000, 9001]);
+      flat(sunBuf, sunTex, IDENTITY, [1, 1, 1, 1], [0, 0], [9000, 9001]);
       view = savedView;
 
-      // The world.
+      // The world: only the slices the view reaches.
+      frustum();
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
       gl.disable(gl.BLEND);
       gl.enable(gl.CULL_FACE);
       gl.cullFace(gl.BACK);
-      gl.useProgram(worldProg.p);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
-      gl.uniform1i(worldProg.u.uTex, 0);
-      gl.uniformMatrix4fv(worldProg.u.uProj, false, proj);
-      gl.uniformMatrix4fv(worldProg.u.uView, false, view);
-      gl.uniform3f(worldProg.u.uFog, FOG[0], FOG[1], FOG[2]);
+      /* The solid blocks through a program with no cut-out test in it
+         (SOLID_FS): every texel they wear is opaque, so the test never cut
+         anything, and a shader that can discard makes the card shade a
+         fragment before it may keep or drop it by depth. */
+      gl.useProgram(solidProg.p);
+      gl.uniform1i(solidProg.u.uTex, 0);
+      gl.uniformMatrix4fv(solidProg.u.uProj, false, proj);
+      gl.uniformMatrix4fv(solidProg.u.uView, false, view);
+      gl.uniform3f(solidProg.u.uFog, FOG[0], FOG[1], FOG[2]);
       gl.bindSampler(0, smooth);
-      drawWorldPass(opaqueBuf, worldProg, identity(), 1.0, 0.5, fogRange);
+      drawWorldPass(opaqueBuf, solidProg, IDENTITY, 1.0, 0.5, fogRange);
       gl.bindSampler(0, null);
 
       // Leaves are boxes and plants carry both windings, so culling stays on.
       // Alpha-to-coverage turns each texel's alpha into sample coverage: far
       // tufts thin out smoothly rather than popping when their mip averages
       // cross a cut-off.
+      gl.useProgram(worldProg.p);
+      gl.uniform1i(worldProg.u.uTex, 0);
+      gl.uniformMatrix4fv(worldProg.u.uProj, false, proj);
+      gl.uniformMatrix4fv(worldProg.u.uView, false, view);
+      gl.uniform3f(worldProg.u.uFog, FOG[0], FOG[1], FOG[2]);
       gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
-      drawWorldPass(cutoutBuf, worldProg, identity(), 1.0, 0.02, fogRange);
+      drawWorldPass(cutoutBuf, worldProg, IDENTITY, 1.0, 0.02, fogRange);
       gl.disable(gl.SAMPLE_ALPHA_TO_COVERAGE);
       gl.disable(gl.CULL_FACE);
 
       // The clouds, a sheet high over everything, drifting east.
-      var ch = eye[1] + 74, cr = 640, cs = 12 * 256;
-      var cloudQuad = quad(
-        [eye[0] - cr, ch, eye[2] + cr], [eye[0] + cr, ch, eye[2] + cr],
-        [eye[0] + cr, ch, eye[2] - cr], [eye[0] - cr, ch, eye[2] - cr]);
-      for (var i = 0; i < 6; i++) {
-        cloudQuad[i * 5 + 3] = cloudQuad[i * 5] / cs;
-        cloudQuad[i * 5 + 4] = cloudQuad[i * 5 + 2] / cs;
-      }
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       gl.depthMask(false);
-      flat(cloudQuad, cloudTex, identity(), [1, 1, 1, 0.8], [t * 0.7 / cs, 0], [140, 460]);
+      flat(cloudBuf, cloudTex, IDENTITY, [1, 1, 1, 0.8], [t * 0.7 / CLOUD_SCALE, 0], [140, 460]);
 
       // Water, seen through.
       gl.useProgram(worldProg.p);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
       // The water moves: the game shows each of its 32 frames for two ticks.
       gl.bindSampler(0, smooth);
-      drawWorldPass(waterBuf, worldProg, identity(), 0.78, 0.0, fogRange, Math.floor(t * 10) % WATER_FRAMES);
+      drawWorldPass(waterBuf, worldProg, IDENTITY, 0.78, 0.0, fogRange, Math.floor(t * 10) % WATER_FRAMES);
       gl.bindSampler(0, null);
 
       // Waypoint beams, blended the way the game blends them — a solid
@@ -1645,15 +1951,15 @@
         gl.disable(gl.CULL_FACE);
         gl.useProgram(worldProg.p);
         gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
-        gl.uniformMatrix4fv(worldProg.u.uView, false, identity());
+        gl.uniformMatrix4fv(worldProg.u.uView, false, IDENTITY);
         // Already in view space; api.arm is only a nudge on top of the game's own placement.
         var a = api.arm;
-        drawWorldPass(armBuf, worldProg, translation(a.x, a.y, a.z), 1.0, 0.5, [9000, 9001]);
+        drawWorldPass(armBuf, worldProg, translation(a.x, a.y, a.z, armAt), 1.0, 0.5, [9000, 9001]);
       }
 
       // Labels that stand in the world: project their anchor to the screen.
       if (labels.length) {
-        var vp = multiply(proj, view);
+        // vp is this frame's projection times view, from frustum() above.
         labels.forEach(function (l) {
           var x = l.x + 0.5, y = l.y, z = l.z + 0.5;
           var cx = vp[0] * x + vp[4] * y + vp[8] * z + vp[12];
@@ -1727,17 +2033,41 @@
       },
       resume: function () { if (destroyed) return; running = true; if (ready) schedule(); },
       redraw: function () { if (ready) draw(performance.now()); },
-      destroy: function () { api.pause(); destroyed = true; },
+      /* Everything the world holds is given back (2026-09-22). destroy()
+         used to stop the frames and nothing else: the window's resize
+         listener kept the whole closure — the world, its buffers, the
+         context and its multisampled drawing buffer on the card — for the
+         life of the page, so every switch to a picture of your own and back
+         (Background) or off and on (Live background) left one more world on
+         the card, until Chromium began dropping the oldest contexts. */
+      destroy: function () {
+        if (destroyed) return;
+        api.pause();
+        destroyed = true;
+        window.removeEventListener('resize', onResize);
+        if (observer) observer.disconnect();
+        [opaqueBuf, cutoutBuf, waterBuf, armBuf, sunBuf, cloudBuf].forEach(function (b) { if (b) gl.deleteBuffer(b.b); });
+        gl.deleteBuffer(skyBuf);
+        gl.deleteBuffer(flatBuf);
+        [tex, sunTex, cloudTex, beamTex].forEach(function (t) { if (t) gl.deleteTexture(t); });
+        if (smooth) gl.deleteSampler(smooth);
+        [worldProg, solidProg, flatProg, skyProg].forEach(function (p) { gl.deleteProgram(p.p); });
+        var lose = gl.getExtension('WEBGL_lose_context');
+        if (lose) lose.loseContext();
+        world = null; meshing = null;
+      },
       /* The drawing buffer let go while nobody is looking, and taken back
          with the next frame. Both idempotent; sleep() pauses, wake() does
          not resume — that is still the caller's call. */
       sleep: function () { if (asleep || destroyed) return; asleep = true; api.pause(); resize(); gl.flush(); },
       wake: function () { if (!asleep) return; asleep = false; resize(); },
       ground: ground,
-      eye: eye,
+      /* Where the camera stands: its height is the ground's, so asking
+         builds the world if it is not built yet. */
+      get eye() { if (!destroyed) build(); return eye; },
       /* A nudge on the arm, on top of where the game itself puts it. Zero. */
       arm: { x: 0, y: 0, z: 0 },
-      stats: function () { return { opaque: opaqueBuf.n, cutout: cutoutBuf.n, water: waterBuf.n, size: [canvas.width, canvas.height] }; },
+      stats: function () { build(); return { opaque: opaqueBuf.n, cutout: cutoutBuf.n, water: waterBuf.n, size: [canvas.width, canvas.height] }; },
       look: function (deg) { yaw = deg * Math.PI / 180; if (ready && !running) draw(performance.now()); },
       /* One frame from a given direction, as a PNG data URL. This is how the
          stills and the game's six panorama faces are made (the launcher's
@@ -1753,6 +2083,13 @@
       }
     };
 
+    function onResize() {
+      measure();
+      if (ready && !running && !asleep) draw(performance.now());
+    }
+    var observer = typeof ResizeObserver === 'function' ? new ResizeObserver(onResize) : null;
+    if (observer) observer.observe(canvas);
+
     /* The drawing buffer is sized now, while the graphics card is idle,
        rather than on the first frame (2026-09-15). The first frame lands
        just as the compositor is compiling the launcher's own shaders — some
@@ -1760,9 +2097,10 @@
        buffer then waited behind them: 470 ms, measured, in one canvas.width
        assignment. Sized here it costs nothing, and draw()'s resize() finds
        nothing to do. */
+    measure();
     resize();
     api.resume();
-    window.addEventListener('resize', function () { if (ready && !running) draw(performance.now()); });
+    window.addEventListener('resize', onResize);
     return api;
   }
 
