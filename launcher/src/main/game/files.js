@@ -388,8 +388,23 @@ async function extractNatives(jarFile, targetDir, exclude = []) {
 
     // Native loading is flat; a jar that nests them still yields a flat dir.
     const out = path.join(targetDir, path.basename(entry.name));
-    if (fs.existsSync(out)) continue;
-    await fsp.writeFile(out, readEntry(buf, entry));
+    // The size the jar says, not mere existence (2026-09-22): a native
+    // written straight to its name by a launch that was stopped part way
+    // stayed a short file for good, and the game failed to load it on every
+    // press after (natives are the old versions' — 1.8.9 among them). Put
+    // beside and renamed, like every other file here.
+    const have = await fsp.stat(out).catch(() => null);
+    if (have && have.isFile() && have.size === entry.size) continue;
+    const temp = `${out}.part`;
+    await fsp.writeFile(temp, readEntry(buf, entry));
+    try {
+      await fsp.rename(temp, out);
+    } catch (error) {
+      await fsp.rm(temp, { force: true }).catch(() => {});
+      // A game still running on this version has the old one loaded; that
+      // game is using it, so it stands until the game closes.
+      if (!have) throw error;
+    }
   }
 }
 
