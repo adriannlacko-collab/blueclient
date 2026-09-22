@@ -561,6 +561,7 @@ function settleLastAttempt(currentVersion) {
   if (settled) return;
   settled = true;
   const record = readAttempts();
+  pruneSwapResults(record.last && record.last.result);
   const last = record.last;
   if (!last || !last.version) return;
   const took = !newer(last.version, currentVersion);
@@ -573,6 +574,38 @@ function settleLastAttempt(currentVersion) {
   const failures = (record.failed && record.failed[last.version] || 0) + 1;
   note('warn ', `bundle ${last.version}: the swap did not take — this is still ${currentVersion}; the script ${result ? `said "${result}"` : 'left no result'} (failure ${failures} of ${SWAP_GIVE_UP} before the installer is asked instead)`);
   writeAttempts({ failed: { ...(record.failed || {}), [last.version]: failures } });
+}
+
+/**
+ * The swap scripts' outcomes left behind (2026-09-22). Each swap writes its
+ * own `swap-<stamp>.result` into userData and nothing ever took one away, so
+ * every update added a file for good. Pruned once a run, from settle: never
+ * the one the record still names (`keep`, about to be read), and never one
+ * less than an hour old — a script still waiting on a launcher's exit may
+ * yet write it, and the longest a script lives is five minutes and a half.
+ */
+const SWAP_RESULT_KEEP_MS = 60 * 60 * 1000;
+
+function pruneSwapResults(keep) {
+  let dir;
+  let names;
+  try {
+    dir = app.getPath('userData');
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  const same = (a, b) => (process.platform === 'win32'
+    ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
+    : path.resolve(a) === path.resolve(b));
+  for (const name of names) {
+    const match = /^swap-(\d+)\.result$/.exec(name);
+    if (!match) continue;
+    const file = path.join(dir, name);
+    if (keep && same(file, String(keep))) continue;
+    if (Date.now() - Number(match[1]) < SWAP_RESULT_KEEP_MS) continue;
+    try { fs.unlinkSync(file); } catch { /* the next run tries again */ }
+  }
 }
 
 /** True when the bundle channel has given up on this version. */
