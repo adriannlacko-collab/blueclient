@@ -223,7 +223,9 @@ async function file({ slug, version, loader }) {
     // a failure (2026-09-22), which is what lets `resolveFile` tell a
     // withdrawn build from an unreachable Modrinth and refuse to put a jar
     // the author has taken down back in the folder from memory.
-    return { ok: false, noBuild: true, error: `No build for Minecraft ${version} on ${loader}` };
+    // No loader is a resource pack's ask (packs.add, 2026-09-22): the
+    // sentence stops at the version rather than ending "on undefined".
+    return { ok: false, noBuild: true, error: `No build for Minecraft ${version}${loader ? ` on ${loader}` : ''}` };
   }
   return { ok: true, ...build };
 }
