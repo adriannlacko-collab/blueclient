@@ -167,6 +167,11 @@ class Session extends EventEmitter {
     if (/^The download of .+ stalled$/.test(text)) {
       return `${text} — check the connection and press Play again; it carries on from where it stopped.`;
     }
+    // A server the pipeline could not reach at all (game/files.js,
+    // `unreachable`, 2026-09-22) — the connection's, not the launcher's.
+    if (/^Could not reach \S+$/.test(text)) {
+      return `${text} — check the connection and press Play again.`;
+    }
     const fault = error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError
       || /^The "\w+" argument must be/.test(text) || /ERR_INVALID_ARG/.test(String(error && error.code || ''));
     if (!fault) return text;
@@ -209,6 +214,19 @@ class Session extends EventEmitter {
         'BlueClient supports Vanilla and Fabric.'
       );
     }
+
+    // Every remembered answer this press is about to read, renewed now if it
+    // is due, and all at once (2026-09-22). Each stage below renews its own
+    // expired answer behind a grace of its own (memo.remember), which is
+    // right, but they did it in turn: the Fabric loader in resolve, Mojang's
+    // runtime index in the Java stage, each wave of Modrinth lookups in
+    // mods — measured with every answer aged past its keep-by, 1.1 s from
+    // the press to the JVM against 40 ms fresh, three round trips end to
+    // end. Started here, each stage finds its renewal already on the way
+    // (one request per key, memo.refresh) and the three overlap: 0.4 s
+    // measured the same way. On a press whose answers are fresh this is a
+    // few lookups in memory.
+    this._prefetch(store, profile, loader);
 
     // A renewal rotates the Microsoft refresh token on disk, so two launches
     // starting together must not both attempt one — the second would present a
@@ -298,6 +316,11 @@ class Session extends EventEmitter {
       () => install.ensureClient(root, json, profile.version, stage.fraction),
       stage.waiting
     );
+    // The logging file of a Minecraft whose log4j still expands lookups
+    // (install.ensureLogging, 2026-09-22): null for every version from
+    // 1.18.2 on. One that cannot be fetched is not a reason to refuse the
+    // game — it starts as it always did.
+    const logging = await install.ensureLogging(root, json).catch(() => null);
     this._check();
     stage.done();
 
@@ -429,7 +452,8 @@ class Session extends EventEmitter {
       join: profile.join || null,
       // A world card pressed on Worlds (2026-09-11): straight into that save
       // (--quickPlaySingleplayer, the same family, 1.20 and later).
-      world: profile.world || null
+      world: profile.world || null,
+      logging
     });
 
     // Not here, and measured out rather than left untried (2026-09-10): a
@@ -443,6 +467,13 @@ class Session extends EventEmitter {
     // (game/gpu.js, 2026-09-20): one registry read per runtime per launcher
     // run, and a write only the first time a runtime is ever launched.
     const card = await gpu.prefer(java.binary);
+
+    // Once more before the JVM (2026-09-22): the last look was after the
+    // mods stage, and the tune, the shaderpack, the remapped jar's copy and
+    // the card all come after it — a second or more on a new profile — so a
+    // Cancel pressed in that stretch was answered "ok" and the game started
+    // anyway.
+    this._check();
 
     await this._spawn(java.binary, args, gameDir, logDir, {
       profile, account, versionId, instances,
@@ -475,6 +506,24 @@ class Session extends EventEmitter {
       offline: account.type !== 'microsoft',
       skippedMods: modResult.failed
     };
+  }
+
+  /**
+   * See the call in _run. Never throws, never waited for. Only answers past
+   * their keep-by (`ahead` 0): those are the ones the stages would renew
+   * anyway. One merely near it is prime()'s to renew, not the press's — a
+   * renewal's TLS and JSON run on this same thread, beside the press.
+   */
+  _prefetch(store, profile, loader) {
+    const quietly = (promise) => Promise.resolve(promise).catch(() => {});
+    const ahead = 0;
+    try {
+      if (loader === 'fabric') install.warmFabric([profile.version], ahead);
+      if (!String(store.get('game.javaPath') || '').trim()) quietly(install.warmJavaIndex(ahead));
+      quietly(mods.warmLookups([{ version: profile.version, loader, mods: profileMods(store, profile.id) }], ahead));
+    } catch {
+      /* a head start, nothing more */
+    }
   }
 
   /**
@@ -608,6 +657,14 @@ class Session extends EventEmitter {
         // 'playing', and then there is nothing to back up.
         worlds.afterSession(context.instances, gameDir, this.startedAt).catch(() => {});
 
+        // Stopped by the player's Cancel before it reached 'playing': not a
+        // crash and not a failure, and nothing to read or log.
+        if (!settled && this._cancelled) {
+          settled = true;
+          reject(new Cancelled());
+          return;
+        }
+
         // What went wrong, if anything did (crashes.js, 2026-09-11): the
         // game's own crash report, an hs_err file, or the JVM's last words,
         // read into one line the row on Home can carry. Null for a clean
@@ -697,7 +754,7 @@ class Session extends EventEmitter {
       // The JVM is up. Give it a moment to fall over on a bad command line
       // before calling the launch a success.
       setTimeout(() => {
-        if (settled || child.exitCode !== null) return;
+        if (settled || child.exitCode !== null || this._cancelled) return;
         settled = true;
         this.status = 'playing';
         this.startedAt = Date.now();
@@ -754,15 +811,25 @@ class Session extends EventEmitter {
     }, onWait);
   }
 
-  /** Stop a launch that has not started its JVM yet. */
+  /**
+   * Stop a launch that has not reached 'playing' yet.
+   *
+   * Including the second after the JVM is started and before the row says
+   * so (2026-09-22): the row still offers Cancel then, and a Cancel that
+   * answered "ok" while the game window went on to open was the one case it
+   * did nothing. The JVM is stopped and the session ends as cancelled, not
+   * as a game that exited before starting (see _spawn).
+   */
   cancel() {
     if (this.status !== 'working') return { ok: false };
     this._cancelled = true;
+    if (this._child) this._child.kill();
     return { ok: true };
   }
 
   /** Close a running game, or give up on one that is still preparing. */
   close() {
+    if (this.status === 'working') return this.cancel();
     if (this._child) {
       this._child.kill();
       this._child = null;
@@ -880,6 +947,9 @@ class Launcher extends EventEmitter {
     if (!profiles.length) return;
 
     install.warmFabric(profiles.filter((p) => p.loader === 'fabric').map((p) => p.version));
+    // Mojang's runtime index too (2026-09-22): the one lookup the press
+    // still met expired, once every half day.
+    if (!String(store.get('game.javaPath') || '').trim()) await install.warmJavaIndex();
     await mods.warmLookups(profiles.map((p) => ({
       version: p.version,
       loader: p.loader === 'fabric' ? 'fabric' : 'vanilla',

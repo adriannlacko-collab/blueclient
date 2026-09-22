@@ -28,7 +28,18 @@ const fsp = require('fs/promises');
 
 const FILE = 'lookups.json';
 
-/** Beyond this the file is dropped rather than pruned: it is only a cache. */
+/**
+ * Beyond this the oldest answers are let go (2026-09-22).
+ *
+ * The file used to be dropped whole past this — "it is only a cache" — but
+ * nothing in it ever expires on its own: a pairing is kept per set of mods,
+ * so every set a player has switched to adds one, and every mod on every
+ * Minecraft the Mods page has been asked about adds another. A launcher that
+ * crossed the line lost the lot at its next start, the Java manifest the
+ * offline check needs included, and the first press after paid every lookup
+ * live — the wait this file exists to keep off the press. Now the newest
+ * answers stay and the rest go.
+ */
 const MAX_ENTRIES = 400;
 
 let file = null;
@@ -40,20 +51,44 @@ function init(userDataDir) {
   file = path.join(userDataDir, FILE);
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    data = parsed && typeof parsed === 'object' ? parsed : {};
+    data = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch {
     data = {};
   }
-  if (Object.keys(data).length > MAX_ENTRIES) data = {};
+  const keys = Object.keys(data);
+  if (keys.length > MAX_ENTRIES) {
+    const age = (key) => (data[key] && typeof data[key].at === 'number' ? data[key].at : 0);
+    const kept = {};
+    for (const key of keys.sort((a, b) => age(b) - age(a)).slice(0, MAX_ENTRIES)) kept[key] = data[key];
+    data = kept;
+    save();
+  }
 }
 
-/** Debounced, and never allowed to throw: losing a cache is not an error. */
+/** The write in hand, so two never run over one file at once. */
+let writing = Promise.resolve();
+
+/**
+ * Debounced, and never allowed to throw: losing a cache is not an error.
+ *
+ * Beside the file and renamed over it (2026-09-22), the way store.js writes
+ * the settings: a launcher closed in the middle of a plain write can leave
+ * half a JSON file, which the next start reads as nothing — every remembered
+ * answer gone for the price of one bad moment. And one write at a time: the
+ * debounce spaces them, but a write slower than the debounce (a busy disk,
+ * a scanner holding the file) used to let the next one start over it.
+ */
 function save() {
   if (!file || timer) return;
   timer = setTimeout(() => {
     timer = null;
+    const target = file;
     const body = JSON.stringify(data);
-    fsp.writeFile(file, body, 'utf8').catch(() => {});
+    writing = writing.then(async () => {
+      const temp = `${target}.tmp`;
+      await fsp.writeFile(temp, body, 'utf8');
+      await fsp.rename(temp, target);
+    }).catch(() => {});
   }, 400);
   if (timer.unref) timer.unref();
 }
@@ -70,6 +105,21 @@ function get(key, maxAgeMs) {
 function stale(key) {
   const entry = data[key];
   return entry ? entry.value : undefined;
+}
+
+/**
+ * How long before its keep-by an answer is worth renewing behind the press
+ * (2026-09-22): three of `Launcher.prime`'s ten-minute beats, so a launcher
+ * left open renews each answer before it runs out rather than up to ten
+ * minutes after, when a press may already have met it expired.
+ */
+const DUE_AHEAD_MS = 30 * 60 * 1000;
+
+/** Whether `key` wants asking again: nothing stored, or near its `maxAgeMs`. */
+function due(key, maxAgeMs, aheadMs = DUE_AHEAD_MS) {
+  const entry = data[key];
+  if (!entry || typeof entry.at !== 'number') return true;
+  return Date.now() - entry.at > maxAgeMs - aheadMs;
 }
 
 function set(key, value) {
@@ -121,7 +171,7 @@ async function remember(key, maxAgeMs, work, options) {
     if (old !== undefined) {
       const job = refresh(key, work);
       const grace = Number(options.graceMs) || 0;
-      if (grace > 0 && await Promise.race([job.then(() => true), after(grace)])) {
+      if (grace > 0 && await within(job, grace)) {
         const now = stale(key);
         if (now !== undefined) return now;
       }
@@ -148,8 +198,28 @@ function refresh(key, work) {
   const promise = (async () => {
     try { set(key, await work()); } catch { /* the remembered answer stands */ }
   })().finally(() => { inFlight.delete(key); });
+  promise.startedAt = Date.now();
   inFlight.set(key, promise);
   return promise;
 }
 
-module.exports = { init, get, set, stale, remember, refresh };
+/**
+ * True when a renewal from `refresh` lands within `graceMs` of when it
+ * STARTED, false as soon as that has passed (2026-09-22).
+ *
+ * The grace used to run from each caller's own ask: a press that set its
+ * renewals going at the start (Session._run) and then met them one stage
+ * at a time waited the whole grace at every stage that found its renewal
+ * still out — offline, where a failed fetch retries for a second and a
+ * half, that was the Fabric stage's 0.7 s and then the Java stage's 0.7 s
+ * again (1.4 s measured, press to JVM). Counted from the start, every
+ * renewal a press waits on runs out at the same moment, and one that has
+ * been out since a `prime` beat minutes ago is not waited for at all.
+ */
+async function within(job, graceMs) {
+  const left = Number(graceMs) - (Date.now() - (job.startedAt || Date.now()));
+  if (!(left > 0)) return false;
+  return Promise.race([job.then(() => true), after(left)]);
+}
+
+module.exports = { init, get, set, stale, due, remember, refresh, within };

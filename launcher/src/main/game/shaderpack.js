@@ -22,10 +22,13 @@
 const path = require('path');
 const fsp = require('fs/promises');
 const zlib = require('zlib');
+const { lane } = require('./lane');
 
 /** What Iris calls the pack. Must match Pack.NAME in the mod. */
 const NAME = 'BlueClient-Photon';
 const STAMP = '.blueclient';
+/** The stamp while a copy is under way; never equal to a finished one. See `write`. */
+const PENDING = 'launcher:copying';
 
 /** Remembered per source folder: the stamp is a read of six megabytes. */
 const stamps = new Map();
@@ -83,11 +86,42 @@ async function install(packDir, instanceDir) {
   const existing = await fsp.readFile(stampFile, 'utf8').then((s) => s.trim()).catch(() => null);
   if (existing === stamp) return 'kept';
 
+  // Two presses of one profile write one folder; the second finds it done.
+  return lane(`shaderpack:${target}`, () => write(target, files, stamp));
+}
+
+/**
+ * The copy itself, with the stamp going in first (2026-09-22).
+ *
+ * The folder used to be emptied, filled, and stamped last — so a copy that
+ * stopped part way (the launcher closed on the first press, a file a running
+ * game still had open, a full disk) left a folder of our files with no stamp
+ * in it, which every later press read as a pack of the player's own and left
+ * alone for good: the half-copied Photon stayed, and Iris was handed a pack
+ * with files missing on every launch after. A stamp that says a copy is under way is written before anything else
+ * is touched, so the folder is ours from that moment, and the next press
+ * finishes the job; the real stamp replaces it only once every file is in.
+ */
+async function write(target, files, stamp) {
+  const stampFile = path.join(target, STAMP);
+  const existing = await fsp.readFile(stampFile, 'utf8').then((s) => s.trim()).catch(() => null);
+  if (existing === stamp) return 'kept';
+
   if (await exists(target)) {
     const ours = existing !== null;
     const empty = (await fsp.readdir(target)).length === 0;
     if (!ours && !empty) return 'theirs';
-    await fsp.rm(target, { recursive: true, force: true });
+  }
+
+  await fsp.mkdir(target, { recursive: true });
+  await fsp.writeFile(stampFile, PENDING, 'utf8');
+
+  // What the folder holds that this pack does not — an older build's files —
+  // goes; what it shares is written over below.
+  const wanted = new Set(files.map((file) => file.relative));
+  for (const file of await walk(target)) {
+    if (file.relative === STAMP || wanted.has(file.relative)) continue;
+    await fsp.rm(file.full, { force: true });
   }
 
   for (const file of files) {

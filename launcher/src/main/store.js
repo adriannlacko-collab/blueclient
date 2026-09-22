@@ -82,6 +82,11 @@ function deepMerge(base, patch) {
   if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) return patch;
   const out = typeof base === 'object' && base !== null && !Array.isArray(base) ? base : {};
   for (const [key, value] of Object.entries(patch)) {
+    // A patch arrives from the renderer (settings:set) and from a file on
+    // disk; an own `__proto__` key in either — JSON.parse makes one — would
+    // be merged into Object.prototype itself (2026-09-22). No setting is
+    // called that.
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
     out[key] = value !== null && typeof value === 'object' && !Array.isArray(value)
       ? deepMerge(out[key], value)
       : value;

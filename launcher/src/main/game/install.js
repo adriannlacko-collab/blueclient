@@ -163,10 +163,27 @@ function offlineUuid(username) {
 
 /* -------------------------------------------------------------- version */
 
+/**
+ * Mojang's list of versions, kept for an hour (2026-09-22).
+ *
+ * It was kept for the life of the process, and a launcher is left open for
+ * days: one open on the day a Minecraft came out never offered it, and a
+ * profile set to it (from Import, or another copy's settings) was refused as
+ * an "Unknown Minecraft version" until a restart. A copy that cannot be
+ * renewed is used as it is.
+ */
+const MANIFEST_TTL_MS = 60 * 60 * 1000;
 let manifestCache = null;
+let manifestAt = 0;
 
-async function versionManifest() {
-  if (!manifestCache) manifestCache = await fetchJson(VERSION_MANIFEST);
+async function versionManifest({ fresh = false } = {}) {
+  if (manifestCache && !fresh && Date.now() - manifestAt < MANIFEST_TTL_MS) return manifestCache;
+  try {
+    manifestCache = await fetchJson(VERSION_MANIFEST);
+    manifestAt = Date.now();
+  } catch (error) {
+    if (!manifestCache) throw error;
+  }
   return manifestCache;
 }
 
@@ -193,8 +210,12 @@ async function versionJson(root, id) {
     if (local.id && (local.downloads || local.inheritsFrom)) return local;
   } catch { /* fall through and fetch it */ }
 
-  const manifest = await versionManifest();
-  const entry = manifest.versions.find((v) => v.id === id);
+  let entry = (await versionManifest()).versions.find((v) => v.id === id);
+  // Released since the copy in hand was fetched: ask once more, not twice a
+  // minute for an id that really is unknown.
+  if (!entry && Date.now() - manifestAt > 60 * 1000) {
+    entry = (await versionManifest({ fresh: true })).versions.find((v) => v.id === id);
+  }
   if (!entry) throw new Error('Unknown Minecraft version "' + id + '"');
 
   const json = await fetchJson(entry.url);
@@ -260,10 +281,17 @@ function fabricWork(gameVersion) {
   };
 }
 
-/** Renew the Fabric answer for these versions in the background. Never throws. */
-function warmFabric(gameVersions) {
+/**
+ * Renew the Fabric answer for these versions in the background. Never throws.
+ *
+ * Only an answer near its keep-by (memo.due, 2026-09-22): this asked
+ * meta.fabricmc.net for every version on every ten-minute beat of `prime`,
+ * a request an hour per version for an answer kept half a day; the press
+ * reads a fresh answer from memory either way.
+ */
+function warmFabric(gameVersions, aheadMs) {
   for (const version of new Set(gameVersions)) {
-    if (!version) continue;
+    if (!version || !memo.due('fabric:' + version, FABRIC_TTL_MS, aheadMs)) continue;
     memo.refresh('fabric:' + version, fabricWork(version));
   }
 }
@@ -310,6 +338,80 @@ async function ensureClient(root, json, baseVersion, onProgress) {
     onBytes: onProgress ? (received, total) => onProgress(total ? received / total : 0) : null
   });
   return file;
+}
+
+/**
+ * The logging setup a Minecraft with a Log4Shell-era log4j must run with
+ * (2026-09-22), or null when this one needs none.
+ *
+ * Every version from 1.7 to 1.18.1 ships a log4j (2.0-beta9, 2.8.1, 2.14.1)
+ * that expands `${…}` lookups in the messages it logs unless it is told not
+ * to — a chat line included, which is anyone's on a server to write.
+ * Mojang's answer, in December 2021, was a logging file named in each
+ * version JSON (`logging.client`) that the official launcher passes as
+ * `-Dlog4j.configurationFile`; this launcher never read that block, so those
+ * versions ran on the jar's own logging setup, which says nothing about
+ * lookups before 1.18.1. Checked on the real clients launched from here as
+ * a player named `${sys:java.version}`: 1.8.9 and 1.12.2 printed "Setting
+ * user: 1.8.0_202" (with this file, nothing and the name as typed); 1.18.1's
+ * own setup already printed the name as typed. A `${jndi:…}` in chat is the
+ * same path to the network.
+ *
+ * Mojang's file is fetched as it is (by its hash, into `assets/log_configs`
+ * where the official launcher keeps it) and one thing is changed in the
+ * copy passed to the game: the console, which Mojang writes as XML events
+ * for its own launcher to parse, is written as the plain lines the game
+ * prints without it — the lines the crash reader and the launch log read —
+ * with lookups off (`%msg{nolookups}`; 1.7's file also filters any message
+ * with a lookup in it, for every appender). Versions whose log4j is 2.17 or
+ * later are left exactly as they were: nothing to fix, and their console
+ * is what the companion's notes are read from.
+ *
+ * @returns {Promise<string|null>} the JVM argument, or null
+ */
+async function ensureLogging(root, json) {
+  const client = json.logging && json.logging.client;
+  if (!client || !client.file || !client.file.url || !client.file.id || typeof client.argument !== 'string') return null;
+  if (!lookupsOn(json.libraries)) return null;
+
+  const id = path.basename(String(client.file.id));
+  const theirs = path.join(root, 'assets', 'log_configs', id);
+  await download(client.file.url, theirs, client.file);
+
+  const text = await fsp.readFile(theirs, 'utf8');
+  const sysOut = /(<Console\s+name="SysOut"[^>]*>)([\s\S]*?)(<\/Console>)/.exec(text);
+  let file = theirs;
+  if (sysOut && /<(?:Legacy)?XMLLayout\s*\/>/.test(sysOut[2])) {
+    const plain = text.replace(sysOut[0], `${sysOut[1]}\n            <PatternLayout pattern="${PLAIN_CONSOLE}" />\n        ${sysOut[3]}`);
+    file = path.join(root, 'assets', '.blueclient', 'log_configs', id);
+    const target = file;
+    // One writer per file: every version from 1.12 to 1.18.1 names the same one.
+    await lane('logging:' + target, async () => {
+      if ((await fsp.readFile(target, 'utf8').catch(() => null)) === plain) return;
+      await ensureDir(path.dirname(target));
+      await fsp.writeFile(`${target}.part`, plain, 'utf8');
+      await fsp.rename(`${target}.part`, target);
+    });
+  }
+  return fill(client.argument, { path: file });
+}
+
+/** The console line the game prints with its own logging setup, lookups off. */
+const PLAIN_CONSOLE = '[%d{HH:mm:ss}] [%t/%level]: %msg{nolookups}%n';
+
+/**
+ * Whether the log4j on this version's classpath expands lookups in messages
+ * by default: every 2.x before 2.17 (2.15 and 2.16 still had holes). A
+ * version whose log4j cannot be read is taken as needing the file — the
+ * file is Mojang's and harmless where it is not needed.
+ */
+function lookupsOn(libraries) {
+  const core = (libraries || []).find((lib) => lib && /^org\.apache\.logging\.log4j:log4j-core:/.test(String(lib.name || '')));
+  if (!core) return true;
+  const match = /^(\d+)\.(\d+)/.exec(String(core.name).split(':')[2] || '');
+  if (!match) return true;
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  return major < 2 || (major === 2 && minor < 17);
 }
 
 /**
@@ -429,6 +531,23 @@ async function ensureAssets(root, json, gameDir, onProgress) {
 
   const indexFile = path.join(assetsDir, 'indexes', index.id + '.json');
   await download(index.url, indexFile, index);
+  // Kept out of `indexes/`: that folder is Mojang's and other launchers read
+  // it, and a file of ours in it is a file of ours in their way.
+  const stampFile = path.join(assetsDir, '.blueclient', index.id + '.verified.json');
+
+  // The stamp carries its own sample (2026-09-22), so a press that finds it
+  // standing never reads the index at all: the index of a current Minecraft
+  // is 600 KB of JSON, and reading, parsing and listing it was 5 to 15 ms of
+  // the main process's own thread on every press here — the window stops
+  // answering for that long — to pick two dozen names out of five thousand.
+  // Only an index Mojang names by its hash, which is every one of theirs.
+  const stamp = await readStamp(stampFile);
+  if (stamp && index.sha1 && stamp.sha1 === index.sha1 && Array.isArray(stamp.sample) && stamp.sample.length
+    && await samplePresent(assetsDir, stamp.sample)) {
+    if (onProgress) onProgress(1);
+    return { assetsDir, indexId: index.id, legacyDir: null };
+  }
+
   const parsed = JSON.parse(await fsp.readFile(indexFile, 'utf8'));
 
   const entries = Object.entries(parsed.objects || {});
@@ -441,11 +560,12 @@ async function ensureAssets(root, json, gameDir, onProgress) {
   // Versions before 1.7 need every object copied out by name as well, so the
   // walk is the only thing that puts them there and the stamp is no use.
   const copiesOut = Boolean(parsed.virtual || parsed.map_to_resources);
-  // Kept out of `indexes/`: that folder is Mojang's and other launchers read
-  // it, and a file of ours in it is a file of ours in their way.
-  const stampFile = path.join(assetsDir, '.blueclient', index.id + '.verified.json');
+  const sample = sampleOf(entries);
 
-  if (!copiesOut && await stampHolds(stampFile, index, entries, assetsDir)) {
+  if (!copiesOut && stampHolds(stamp, index, entries) && await samplePresent(assetsDir, sample)) {
+    // A stamp from before it carried a sample gets one, so the next press
+    // takes the short way above.
+    if (!Array.isArray(stamp.sample)) await writeStamp(stampFile, index, entries, sample);
     if (onProgress) onProgress(1);
     return result;
   }
@@ -477,44 +597,57 @@ async function ensureAssets(root, json, gameDir, onProgress) {
 
   // Only a pass that got all the way here: anything that threw took the whole
   // stage with it and left no stamp behind.
-  if (!copiesOut) {
-    await ensureDir(path.dirname(stampFile));
-    await fsp.writeFile(stampFile, JSON.stringify({
-      sha1: index.sha1 || null,
-      count: entries.length,
-      at: Date.now()
-    }), 'utf8').catch(() => {});
-  }
+  if (!copiesOut) await writeStamp(stampFile, index, entries, sample);
 
   return result;
 }
 
-/**
- * Whether a previous pass's stamp still stands.
- *
- * It has to name this exact index and the same number of objects, and a
- * scattered sample of those objects has to still be on disk at the right size.
- */
-async function stampHolds(stampFile, index, entries, assetsDir) {
-  let stamp;
+async function readStamp(stampFile) {
   try {
-    stamp = JSON.parse(await fsp.readFile(stampFile, 'utf8'));
+    const stamp = JSON.parse(await fsp.readFile(stampFile, 'utf8'));
+    return stamp && typeof stamp === 'object' ? stamp : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function writeStamp(stampFile, index, entries, sample) {
+  await ensureDir(path.dirname(stampFile)).catch(() => {});
+  await fsp.writeFile(stampFile, JSON.stringify({
+    sha1: index.sha1 || null,
+    count: entries.length,
+    at: Date.now(),
+    sample
+  }), 'utf8').catch(() => {});
+}
+
+/**
+ * Whether a previous pass's stamp still stands for this index: it has to
+ * name this exact index and the same number of objects. The sample is
+ * looked for on the disk separately (`samplePresent`).
+ */
+function stampHolds(stamp, index, entries) {
   if (!stamp || stamp.count !== entries.length) return false;
-  if ((stamp.sha1 || null) !== (index.sha1 || null)) return false;
-  if (entries.length === 0) return true;
+  return (stamp.sha1 || null) === (index.sha1 || null);
+}
 
-  // Spread the sample across the whole index rather than taking the first
-  // few: a half-copied assets folder usually has a contiguous piece of one.
+/**
+ * The objects the spot check looks at, as `[hash, size]` — spread across the
+ * whole index rather than the first few: a half-copied assets folder usually
+ * has a contiguous piece of one.
+ */
+function sampleOf(entries) {
   const step = Math.max(1, Math.floor(entries.length / ASSET_SPOT_CHECK));
-  const checks = [];
-  for (let i = 0; i < entries.length; i += step) checks.push(entries[i]);
+  const out = [];
+  for (let i = 0; i < entries.length; i += step) out.push([entries[i][1].hash, entries[i][1].size]);
+  return out;
+}
 
-  const found = await Promise.all(checks.map(([, object]) => {
-    const prefix = object.hash.slice(0, 2);
-    return isPresent(path.join(assetsDir, 'objects', prefix, object.hash), null, object.size);
+/** Every object of a sample on disk, at its size. */
+async function samplePresent(assetsDir, sample) {
+  const found = await Promise.all(sample.map(([hash, size]) => {
+    if (typeof hash !== 'string' || hash.length < 3) return false;
+    return isPresent(path.join(assetsDir, 'objects', hash.slice(0, 2), hash), null, size);
   }));
   return found.every(Boolean);
 }
@@ -677,22 +810,10 @@ function serverDir(home) {
  *   nothing could be fetched and nothing was remembered.
  */
 async function javaManifest(component, fetchIndex = fetchJson) {
-  const indexKey = 'java:index:' + JAVA_PLATFORM;
+  const indexKey = JAVA_INDEX_KEY;
   const manifestKey = 'java:manifest:' + component;
 
-  const readIndex = async () => {
-    const all = await fetchIndex(JAVA_MANIFEST);
-    const platform = (all && all[JAVA_PLATFORM]) || {};
-    // Only the pointer per component; the index carries every platform.
-    const slim = {};
-    for (const [name, builds] of Object.entries(platform)) {
-      const entry = Array.isArray(builds) ? builds[0] : null;
-      if (entry && entry.manifest && entry.manifest.url) {
-        slim[name] = { url: entry.manifest.url, sha1: entry.manifest.sha1 || null, version: (entry.version && entry.version.name) || '' };
-      }
-    }
-    return slim;
-  };
+  const readIndex = () => readJavaIndex(fetchIndex);
 
   let index;
   try {
@@ -728,6 +849,36 @@ async function javaManifest(component, fetchIndex = fetchJson) {
   } catch {
     return kept ? { files: kept.files, url: kept.url, upgraded: false } : null;
   }
+}
+
+const JAVA_INDEX_KEY = 'java:index:' + JAVA_PLATFORM;
+
+/** Mojang's runtime index, cut to this platform's pointer per component. */
+async function readJavaIndex(fetchIndex = fetchJson) {
+  const all = await fetchIndex(JAVA_MANIFEST);
+  const platform = (all && all[JAVA_PLATFORM]) || {};
+  // Only the pointer per component; the index carries every platform.
+  const slim = {};
+  for (const [name, builds] of Object.entries(platform)) {
+    const entry = Array.isArray(builds) ? builds[0] : null;
+    if (entry && entry.manifest && entry.manifest.url) {
+      slim[name] = { url: entry.manifest.url, sha1: entry.manifest.sha1 || null, version: (entry.version && entry.version.name) || '' };
+    }
+  }
+  return slim;
+}
+
+/**
+ * Renew the runtime index behind the press when it is due (2026-09-22).
+ *
+ * `prime` renewed the Fabric answer and the mod lookups and left this one to
+ * the press, so the first press after its half day stood through a round trip
+ * to Mojang in the Java stage — a third of a second from here, up to the
+ * grace on a slow evening. Never throws.
+ */
+function warmJavaIndex(aheadMs) {
+  if (!JAVA_PLATFORM || !memo.due(JAVA_INDEX_KEY, JAVA_INDEX_TTL_MS, aheadMs)) return Promise.resolve();
+  return memo.refresh(JAVA_INDEX_KEY, () => readJavaIndex(fetchJson));
 }
 
 /**
@@ -1062,7 +1213,8 @@ function jvmTuning(jvmArgs, major) {
 function buildCommand(options) {
   const {
     json, classpath, clientJar, nativesDir, gameDir, assets,
-    account, memoryMb, versionId, librariesDir, jvmArgs, resolution, join, world, javaMajor
+    account, memoryMb, versionId, librariesDir, jvmArgs, resolution, join, world, javaMajor,
+    logging
   } = options;
 
   // A size is only passed when the player asked for a windowed one; in
@@ -1121,6 +1273,9 @@ function buildCommand(options) {
     '-Xmx' + memoryMb + 'M',
     '-Xms' + Math.min(memoryMb, memoryMb >= 4096 ? 2048 : 512) + 'M',
     ...tuning,
+    // The logging file of a Log4Shell-era version (ensureLogging), its own
+    // property rather than a tuning flag: typed Java options never drop it.
+    ...(logging ? [logging] : []),
     ...jvm,
     json.mainClass,
     ...game,
@@ -1145,8 +1300,10 @@ module.exports = {
   listVersions,
   latestFabricLoader,
   warmFabric,
+  warmJavaIndex,
   resolve,
   ensureClient,
+  ensureLogging,
   ensureLibraries,
   ensureAssets,
   ensureJava,

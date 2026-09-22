@@ -51,14 +51,6 @@ const LOOKUP_TTL_MS = 6 * 60 * 60 * 1000;
  */
 const LOOKUP_GRACE_MS = 700;
 
-/** False after the grace, never holding the process open. */
-function grace() {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), LOOKUP_GRACE_MS);
-    if (timer.unref) timer.unref();
-  });
-}
-
 /**
  * How long a settled pairing is kept (2026-09-11).
  *
@@ -117,7 +109,9 @@ async function resolveFile(slug, name, version, loader) {
     // A Modrinth answering at its usual speed still decides this launch, so
     // a newer build lands on the press after it is published, as it always
     // did; one that is slow tonight finishes behind the player.
-    const raced = await Promise.race([job.then(() => true), grace()]);
+    // The grace runs from when the renewal started (memo.within), which for
+    // a press is the moment it began (Session._run's prefetch).
+    const raced = await memo.within(job, LOOKUP_GRACE_MS);
     const now = raced ? memo.stale(key) : null;
     return shaped(now && now.id ? now : old);
   }
@@ -143,13 +137,21 @@ async function resolveFile(slug, name, version, loader) {
  * after, so the answers `resolveFile` reads are fresh by the time anybody
  * presses Play. One ask per project per version-and-loader, whatever it is
  * called on the Mods page; Fabric API is in the list because every Fabric
- * launch needs it and nothing on the page names it. A key still inside its
- * keep-by is left alone, so this costs nothing on a launcher opened twice in
- * an hour. Never throws.
+ * launch needs it and nothing on the page names it. A key still well inside
+ * its keep-by is left alone (memo.due), so this costs nothing on a launcher
+ * opened twice in an hour. Never throws.
+ *
+ * Since the same day it is also what a press calls first, for its own
+ * profile (Session._run), so the asks it would otherwise make one wave at a
+ * time — and after the Fabric and Java stages — all leave at once. For that
+ * the asks run side by side rather than one after another, and the projects
+ * the remembered answers name as required come too: those are the press's
+ * second wave, which nothing renewed before, and which paid its own round
+ * trip once they had aged out.
  *
  * @param {{ version: string, loader: string, mods: object[] }[]} profiles
  */
-async function warmLookups(profiles) {
+async function warmLookups(profiles, aheadMs) {
   const keys = new Map();
   for (const profile of profiles || []) {
     const { version, loader } = profile || {};
@@ -160,13 +162,23 @@ async function warmLookups(profiles) {
       if (mod.since && !companion.atLeast(version, mod.since)) continue;
       slugs.push(mod.slug);
     }
+    const listed = slugs.map((slug) => memo.stale(`mod:${slug}:${version}:${loader}`));
+    const have = new Set(listed.filter((answer) => answer && answer.projectId).map((answer) => answer.projectId));
     for (const slug of slugs) keys.set(`mod:${slug}:${version}:${loader}`, { slug, version, loader });
+    // The required projects the list does not already name, as sync's second
+    // wave would ask for them (by id).
+    for (const answer of listed) {
+      for (const dep of (answer && Array.isArray(answer.dependencies) ? answer.dependencies : [])) {
+        if (!dep || dep.type !== 'required' || !dep.projectId || have.has(dep.projectId)) continue;
+        keys.set(`mod:${dep.projectId}:${version}:${loader}`, { slug: dep.projectId, version, loader });
+      }
+    }
   }
 
-  for (const [key, { slug, version, loader }] of keys) {
-    const fresh = memo.get(key, LOOKUP_TTL_MS);
-    if (fresh && fresh.id) continue;
-    await memo.refresh(key, async () => {
+  await Promise.all([...keys].map(([key, { slug, version, loader }]) => {
+    const known = memo.stale(key);
+    if (known && known.id && !memo.due(key, LOOKUP_TTL_MS, aheadMs)) return null;
+    return memo.refresh(key, async () => {
       const answer = await modrinth.file({ slug, version, loader });
       // A failure is never remembered, and neither is "no build for this
       // Minecraft": the first is Modrinth's evening, the second is an answer
@@ -175,7 +187,7 @@ async function warmLookups(profiles) {
       if (!answer || !answer.ok) throw new Error('not now');
       return answer;
     }).catch(() => {});
-  }
+  }));
 }
 
 /** A remembered answer in today's shape, whatever launcher wrote it. */
@@ -491,7 +503,18 @@ async function sync({ instanceDir, mods = [], version, loader, companionDir, onP
   // on disk: launching offline must not empty the mods folder.
   const keep = new Set(installed);
   if (unresolved || unplaced) {
-    for (const filename of previous) keep.add(filename);
+    // Held — except a build this same press has just put a newer one of in
+    // the folder (2026-09-22). Sodium updated while Lithium's download
+    // stalled kept the old Sodium beside the new one, and Fabric refuses to
+    // start on two jars of one mod: the hold meant to keep the game working
+    // offline was what stopped it (reproduced against a stand-in Modrinth: a
+    // press with one update and one failed fetch left sodium-0.6.0.jar and
+    // sodium-0.7.0.jar side by side).
+    const replaced = await replacedBy(modsDir, previous, installed);
+    for (const filename of previous) {
+      if (!replaced.has(filename)) { keep.add(filename); continue; }
+      await fsp.rm(path.join(modsDir, filename), { force: true }).catch(() => {});
+    }
   } else {
     for (const filename of previous) {
       if (keep.has(filename)) continue;
@@ -510,6 +533,33 @@ async function sync({ instanceDir, mods = [], version, loader, companionDir, onP
 
   await writeManifest(modsDir, [...keep]);
   return { installed: [...keep], failed, missing, held, conflicts, unsupported, companionSkipped, companionCarries, companionLocked };
+}
+
+/**
+ * The jars an earlier press installed that a jar of this press now stands in
+ * for (2026-09-22): the same mod, by the id in its own `fabric.mod.json` —
+ * the name Fabric refuses a second copy of — under an older file name. Read
+ * only on a press that holds the folder, which is the rare one, and only the
+ * launcher's own jars; one that cannot be read is not called a copy of
+ * anything and stays held.
+ *
+ * @returns {Promise<Set<string>>} file names from `previous`
+ */
+async function replacedBy(modsDir, previous, installed) {
+  const out = new Set();
+  const left = previous.filter((filename) => !installed.has(filename) && filename !== COMPANION);
+  if (!left.length) return out;
+  const ids = new Set();
+  for (const filename of installed) {
+    if (filename === COMPANION) continue;
+    const meta = await pairing.read(path.join(modsDir, filename));
+    if (meta) ids.add(meta.id);
+  }
+  for (const filename of left) {
+    const meta = await pairing.read(path.join(modsDir, filename));
+    if (meta && ids.has(meta.id)) out.add(filename);
+  }
+  return out;
 }
 
 /**

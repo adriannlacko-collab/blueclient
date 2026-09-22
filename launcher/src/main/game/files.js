@@ -81,7 +81,27 @@ async function fetchBuffer(url, { timeout = 60000 } = {}) {
       clearTimeout(timer);
     }
   }
-  throw lastError;
+  throw unreachable(lastError, url);
+}
+
+/**
+ * A server that could not be reached, said as that (2026-09-22).
+ *
+ * Node's fetch reports no connection, a name that does not resolve and a
+ * connection dropped mid-answer alike as a TypeError, "fetch failed" (or
+ * "terminated"), and a TypeError is what Session._explain takes for a fault
+ * in the launcher's own code: a player pressing Play offline for the first
+ * time was told "Something went wrong while reading version data — fetch
+ * failed. It is written to launcher-errors.log", and the log got a stack
+ * for a cable. The original stays as the `cause`.
+ */
+function unreachable(error, url) {
+  if (!(error instanceof TypeError) || !/^(?:fetch failed|terminated)$/.test(String(error.message))) return error;
+  let host = 'the server';
+  try { host = new URL(url).host; } catch { /* keep the words */ }
+  const plain = new Error(`Could not reach ${host}`);
+  plain.cause = error;
+  return plain;
 }
 
 async function fetchJson(url) {
@@ -115,9 +135,54 @@ async function fetchJson(url) {
  * @param {number}   [options.stallMs] the silence allowed, for the check under tools/
  * @returns {Promise<boolean>} true when it actually downloaded
  */
-async function download(url, file, { sha1: expected, size } = {}, { onBytes, stallMs = STALL_MS } = {}) {
+async function download(url, file, meta = {}, options = {}) {
+  const { sha1: expected, size } = meta || {};
   if (await isPresent(file, size ? null : expected, size)) return false;
 
+  // Somebody in this process is already fetching this very file (see
+  // `fetching`): wait for them, then look again — their copy is almost
+  // always the answer, and if theirs failed this one tries on its own.
+  const key = targetKey(file);
+  const running = fetching.get(key);
+  if (running) {
+    await running.catch(() => {});
+    return download(url, file, meta, options);
+  }
+
+  const job = fetchInto(url, file, expected, size, options || {});
+  fetching.set(key, job);
+  try {
+    return await job;
+  } finally {
+    if (fetching.get(key) === job) fetching.delete(key);
+  }
+}
+
+/**
+ * The files being fetched right now, by target (2026-09-22).
+ *
+ * Lanes (game/lane.js) keep two launches of one *version* off each other's
+ * files, but the files themselves are shared wider than that: every Fabric
+ * profile runs the same loader and ASM jars whatever its Minecraft, a vanilla
+ * and a Fabric profile on one Minecraft are two version ids over one set of
+ * libraries, and two asset indexes share most of their objects. Two such
+ * launches pressed together each wrote the same `.part` — the second
+ * resumed onto the first one's half-written file, or truncated it, and the
+ * first one's rename then took the part out from under the second: three
+ * attempts later a launch could end on "ENOENT … lib.jar.part" (measured
+ * against a local server that honours ranges the way Mojang's does: one
+ * launch in ten, and 47 requests for 20 files). One fetch per file now,
+ * whoever asks; the second caller waits and finds the file in place.
+ */
+const fetching = new Map();
+
+/** One spelling per file: Windows' paths are the same file in any case. */
+function targetKey(file) {
+  const full = path.resolve(file);
+  return process.platform === 'win32' ? full.toLowerCase() : full;
+}
+
+async function fetchInto(url, file, expected, size, { onBytes, stallMs = STALL_MS }) {
   await ensureDir(path.dirname(file));
   // Write beside the target then rename, so an interrupted run never leaves a
   // half-written file that looks complete.
@@ -147,7 +212,7 @@ async function download(url, file, { sha1: expected, size } = {}, { onBytes, sta
       await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
     }
   }
-  throw lastError;
+  throw unreachable(lastError, url);
 }
 
 /**
@@ -343,8 +408,23 @@ async function extractNatives(jarFile, targetDir, exclude = []) {
 
     // Native loading is flat; a jar that nests them still yields a flat dir.
     const out = path.join(targetDir, path.basename(entry.name));
-    if (fs.existsSync(out)) continue;
-    await fsp.writeFile(out, readEntry(buf, entry));
+    // The size the jar says, not mere existence (2026-09-22): a native
+    // written straight to its name by a launch that was stopped part way
+    // stayed a short file for good, and the game failed to load it on every
+    // press after (natives are the old versions' — 1.8.9 among them). Put
+    // beside and renamed, like every other file here.
+    const have = await fsp.stat(out).catch(() => null);
+    if (have && have.isFile() && have.size === entry.size) continue;
+    const temp = `${out}.part`;
+    await fsp.writeFile(temp, readEntry(buf, entry));
+    try {
+      await fsp.rename(temp, out);
+    } catch (error) {
+      await fsp.rm(temp, { force: true }).catch(() => {});
+      // A game still running on this version has the old one loaded; that
+      // game is using it, so it stands until the game closes.
+      if (!have) throw error;
+    }
   }
 }
 
