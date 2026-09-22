@@ -9,8 +9,9 @@ const fs = require('fs');
 
 /* Node's compile cache, before the thirty-odd modules below are read
    (2026-09-22). Every start compiled the whole of main's JavaScript again
-   from source — Chromium keeps a code cache for the page, and nothing kept
-   one for main — and all of it happens before Electron's ready, so before
+   from source — nothing kept a code cache for main (nor, as it turns out,
+   for the page: Chromium's "Code Cache/js" stays empty for scripts read
+   from file://) — and all of it happens before Electron's ready, so before
    the window can even be asked for. With the cache, V8 is handed the code it
    made last time: measured under Xvfb, the requires below went from about
    40 ms to about 25. It is keyed on each file's own contents, so a new
