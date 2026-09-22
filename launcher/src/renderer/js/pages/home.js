@@ -564,7 +564,10 @@ window.addEventListener('focus', () => {
 /** Keeps the session clocks ticking while this page is on screen. */
 export function mounted() {
   clearInterval(timerHandle);
-  timerHandle = setInterval(paintClocks, 1000);
+  // Not behind a game (2026-09-22): each tick repainted a row of glass, and
+  // with glass on the page that recomposited all of it, once a second, with
+  // the world asleep. The next tick after the launcher is looked at catches up.
+  timerHandle = setInterval(() => { if (!yielding()) paintClocks(); }, 1000);
 
   clearInterval(partnerTimer);
   refreshPartners();
