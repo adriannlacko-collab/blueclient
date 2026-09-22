@@ -480,7 +480,17 @@ function onBackupLanded({ profileId, folder, bytes, when }) {
 
 /* ------------------------------------------------------------------ play */
 
+/* A double-click on Play is one press (2026-09-22) — Home's rule, for the
+   same reason: the session is up the moment main has the launch, so the
+   second click found it and asked "Start anyway?". A press while the first
+   is still being checked, or within a second of its launch going out, is
+   the same press. */
+const PRESS_SETTLE_MS = 1000;
+let pressing = false;
+let launchedAt = 0;
+
 async function playWorld(card) {
+  if (pressing || Date.now() - launchedAt < PRESS_SETTLE_MS) return;
   const world = card.item;
   const profile = ownerProfile(world);
   if (!profile) return;
@@ -488,9 +498,16 @@ async function playWorld(card) {
   if (!activeAccount()) { openAccountModal(); return; }
 
   const memoryMb = profile.memoryMb || state.settings?.game?.memoryMb || 4096;
-  if (!(await allowDuplicate(profile))) return;
-  if (!(await allowMemory(profile, memoryMb))) return;
+  pressing = true;
+  let go;
+  try {
+    go = await allowDuplicate(profile) && await allowMemory(profile, memoryMb);
+  } finally {
+    pressing = false;
+  }
+  if (!go) return;
 
+  launchedAt = Date.now();
   const result = await host.game.launch({
     id: profile.id, name: profile.name, version: profile.version,
     loader: profile.loader, memoryMb, world: world.folder
