@@ -270,16 +270,23 @@ function heroCard(summary) {
  * in the colours picked, which takes a moment the first time; a change of
  * colours or of choice calls this again.
  */
+/* Only the newest choice dresses him (2026-09-22): Yours is cooked the
+   first time it is asked for, which takes a moment, and Signature pressed —
+   or the cape taken off — in that moment was undone when Yours landed, the
+   model wearing a cape the tiles said was not worn. */
+let dressSeq = 0;
+
 async function dressModel(summary) {
   const stage = refs.stage;
   if (!stage?.setCape || !summary?.level) return;
+  const mine = ++dressSeq;
   const worn = capeWorn(summary.level.level, choice());
   if (!worn) {
     stage.setCape(null);
     return;
   }
   const strip = await capeStrip(worn, colours()).catch(() => null);
-  if (refs.stage === stage) stage.setCape(strip);
+  if (refs.stage === stage && mine === dressSeq) stage.setCape(strip);
 }
 
 /**
