@@ -67,14 +67,28 @@ function readVarint(buf, offset) {
  * and an SRV record on the bare domain — which is usually there, pointing at
  * the main lobby — would have quietly sent the ping somewhere else and put the
  * wrong player count on their row.
+ *
+ * Asked for no longer than the ping itself is given (2026-09-22). The
+ * resolver's own patience is several tries of several seconds each, and on
+ * a network whose DNS drops the question — a captive portal, a school
+ * filter — every row's lookup sat there that long before the ping's own
+ * clock had even started, holding `servers:status` and Home's numbers open
+ * with it. A lookup that has not answered in time is no SRV record, which
+ * is what the game makes of one too.
  */
 async function resolve(host, port, explicitPort) {
   if (explicitPort) return { host, port };
+  let timer = null;
   try {
-    const records = await dns.resolveSrv(`_minecraft._tcp.${host}`);
+    const records = await Promise.race([
+      dns.resolveSrv(`_minecraft._tcp.${host}`),
+      new Promise((_, fail) => { timer = setTimeout(() => fail(new Error('timeout')), TIMEOUT_MS); })
+    ]);
     if (records.length) return { host: records[0].name, port: records[0].port };
   } catch {
-    /* No SRV record: the plain host it is. */
+    /* No SRV record, or none in time: the plain host it is. */
+  } finally {
+    clearTimeout(timer);
   }
   return { host, port };
 }
