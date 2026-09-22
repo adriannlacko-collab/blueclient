@@ -289,9 +289,9 @@ function fabricWork(gameVersion) {
  * a request an hour per version for an answer kept half a day; the press
  * reads a fresh answer from memory either way.
  */
-function warmFabric(gameVersions) {
+function warmFabric(gameVersions, aheadMs) {
   for (const version of new Set(gameVersions)) {
-    if (!version || !memo.due('fabric:' + version, FABRIC_TTL_MS)) continue;
+    if (!version || !memo.due('fabric:' + version, FABRIC_TTL_MS, aheadMs)) continue;
     memo.refresh('fabric:' + version, fabricWork(version));
   }
 }
@@ -876,8 +876,8 @@ async function readJavaIndex(fetchIndex = fetchJson) {
  * to Mojang in the Java stage — a third of a second from here, up to the
  * grace on a slow evening. Never throws.
  */
-function warmJavaIndex() {
-  if (!JAVA_PLATFORM || !memo.due(JAVA_INDEX_KEY, JAVA_INDEX_TTL_MS)) return Promise.resolve();
+function warmJavaIndex(aheadMs) {
+  if (!JAVA_PLATFORM || !memo.due(JAVA_INDEX_KEY, JAVA_INDEX_TTL_MS, aheadMs)) return Promise.resolve();
   return memo.refresh(JAVA_INDEX_KEY, () => readJavaIndex(fetchJson));
 }
 

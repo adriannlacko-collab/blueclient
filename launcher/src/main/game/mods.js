@@ -151,7 +151,7 @@ async function resolveFile(slug, name, version, loader) {
  *
  * @param {{ version: string, loader: string, mods: object[] }[]} profiles
  */
-async function warmLookups(profiles) {
+async function warmLookups(profiles, aheadMs) {
   const keys = new Map();
   for (const profile of profiles || []) {
     const { version, loader } = profile || {};
@@ -177,7 +177,7 @@ async function warmLookups(profiles) {
 
   await Promise.all([...keys].map(([key, { slug, version, loader }]) => {
     const known = memo.stale(key);
-    if (known && known.id && !memo.due(key, LOOKUP_TTL_MS)) return null;
+    if (known && known.id && !memo.due(key, LOOKUP_TTL_MS, aheadMs)) return null;
     return memo.refresh(key, async () => {
       const answer = await modrinth.file({ slug, version, loader });
       // A failure is never remembered, and neither is "no build for this

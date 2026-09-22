@@ -223,8 +223,9 @@ class Session extends EventEmitter {
     // mods — measured with every answer aged past its keep-by, 1.1 s from
     // the press to the JVM against 40 ms fresh, three round trips end to
     // end. Started here, each stage finds its renewal already on the way
-    // (one request per key, memo.refresh) and the three overlap. On a press
-    // whose answers are fresh this is a few lookups in memory.
+    // (one request per key, memo.refresh) and the three overlap: 0.4 s
+    // measured the same way. On a press whose answers are fresh this is a
+    // few lookups in memory.
     this._prefetch(store, profile, loader);
 
     // A renewal rotates the Microsoft refresh token on disk, so two launches
@@ -507,13 +508,19 @@ class Session extends EventEmitter {
     };
   }
 
-  /** See the call in _run. Never throws, never waited for. */
+  /**
+   * See the call in _run. Never throws, never waited for. Only answers past
+   * their keep-by (`ahead` 0): those are the ones the stages would renew
+   * anyway. One merely near it is prime()'s to renew, not the press's — a
+   * renewal's TLS and JSON run on this same thread, beside the press.
+   */
   _prefetch(store, profile, loader) {
     const quietly = (promise) => Promise.resolve(promise).catch(() => {});
+    const ahead = 0;
     try {
-      if (loader === 'fabric') install.warmFabric([profile.version]);
-      if (!String(store.get('game.javaPath') || '').trim()) quietly(install.warmJavaIndex());
-      quietly(mods.warmLookups([{ version: profile.version, loader, mods: profileMods(store, profile.id) }]));
+      if (loader === 'fabric') install.warmFabric([profile.version], ahead);
+      if (!String(store.get('game.javaPath') || '').trim()) quietly(install.warmJavaIndex(ahead));
+      quietly(mods.warmLookups([{ version: profile.version, loader, mods: profileMods(store, profile.id) }], ahead));
     } catch {
       /* a head start, nothing more */
     }
