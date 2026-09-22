@@ -51,6 +51,49 @@ function sha1(buffer) {
   return crypto.createHash('sha1').update(buffer).digest('hex');
 }
 
+/** One temp name per write in flight, so two writers of one file never share a temp. */
+let writeSeq = 0;
+
+/**
+ * Write a whole file or nothing (2026-09-22): beside the target, then
+ * renamed over it, the way store.js and memo.js already write theirs.
+ *
+ * A plain writeFile truncates first and fills after, so a launcher closed,
+ * a PC switched off or a second writer in the middle of it leaves a short
+ * file where a whole one was — a version JSON another launcher then cannot
+ * read, an options.txt the game reads as no settings at all. The temp's
+ * name is this write's own (pid and a count), so two writes of one file at
+ * once each rename a finished file and the last one stands, rather than
+ * the second truncating the temp the first is about to rename.
+ *
+ * On Windows a rename over a file another process has open — a scanner,
+ * the indexer, a game reading its config — is refused (EPERM, EBUSY,
+ * EACCES) where a write into it would still have been let through. That is
+ * tried again a moment later, twice, and then the write goes in place the
+ * way it always used to: never worse than before this helper, and whole
+ * whenever Windows allows it. Anything else is thrown, the temp taken away.
+ */
+async function writeFileAtomic(file, data, encoding) {
+  const temp = `${file}.${process.pid}-${++writeSeq}.tmp`;
+  try {
+    await fsp.writeFile(temp, data, encoding);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fsp.rename(temp, file);
+        return;
+      } catch (error) {
+        const busy = error && /EBUSY|EPERM|EACCES/.test(String(error.code || ''));
+        if (!busy) throw error;
+        if (attempt >= 2) break;
+        await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+      }
+    }
+    await fsp.writeFile(file, data, encoding);
+  } finally {
+    await fsp.rm(temp, { force: true }).catch(() => {});
+  }
+}
+
 /** True when the file exists and, if a hash was given, matches it. */
 async function isPresent(file, expectedSha1, expectedSize) {
   try {
@@ -431,6 +474,7 @@ async function extractNatives(jarFile, targetDir, exclude = []) {
 module.exports = {
   ensureDir,
   sha1,
+  writeFileAtomic,
   isPresent,
   fetchBuffer,
   fetchJson,

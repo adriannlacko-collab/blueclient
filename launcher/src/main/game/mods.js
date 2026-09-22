@@ -15,7 +15,7 @@
 const path = require('path');
 const fsp = require('fs/promises');
 
-const { ensureDir, download } = require('./files');
+const { ensureDir, download, writeFileAtomic } = require('./files');
 const companion = require('./companion');
 const jar = require('./jar');
 const memo = require('./memo');
@@ -252,7 +252,10 @@ async function writeManifest(modsDir, files) {
   const body = JSON.stringify({ files }, null, 2);
   const file = path.join(modsDir, MANIFEST);
   try { if (await fsp.readFile(file, 'utf8') === body) return; } catch { /* write it */ }
-  await fsp.writeFile(file, body, 'utf8');
+  // Whole or not at all (2026-09-22, files.writeFileAtomic): a manifest cut
+  // short reads as an empty one, and an empty one owns no jar — every mod
+  // the launcher installed would be left in the folder for good, unretired.
+  await writeFileAtomic(file, body, 'utf8');
 }
 
 /**
@@ -502,6 +505,14 @@ async function sync({ instanceDir, mods = [], version, loader, companionDir, onP
   // unreachable nothing resolves, so "no longer wanted" would mean every mod
   // on disk: launching offline must not empty the mods folder.
   const keep = new Set(installed);
+  // A companion that could not be replaced because a running game has it
+  // open is still in the folder, and still the launcher's (2026-09-22). Left
+  // out of `installed`, it fell out of the manifest: the retire loop below
+  // tried to delete the jar the game about to start was going to load, and
+  // the next press no longer knew it was ours — so a profile moved on to a
+  // Minecraft with no companion build kept the old one, which Fabric refuses
+  // to start beside (the `companionSkipped` clean-up reads the manifest).
+  if (companionLocked && await exists(path.join(modsDir, COMPANION))) keep.add(COMPANION);
   if (unresolved || unplaced) {
     // Held — except a build this same press has just put a newer one of in
     // the folder (2026-09-22). Sodium updated while Lithium's download
@@ -604,7 +615,9 @@ async function tuneEntityCulling(instanceDir) {
   if (root.tickCulling === false) return false;
   root.tickCulling = false;
   await ensureDir(path.dirname(file));
-  await fsp.writeFile(file, JSON.stringify(root, null, 2));
+  // The mod's own file, whole or not at all (2026-09-22): one cut short is
+  // one the mod cannot read, with the player's other keys in it.
+  await writeFileAtomic(file, JSON.stringify(root, null, 2));
   return true;
 }
 
@@ -649,7 +662,9 @@ async function tuneDynamicFps(instanceDir) {
   }
   if (!changed) return false;
   await ensureDir(path.dirname(file));
-  await fsp.writeFile(file, JSON.stringify(root, null, 2));
+  // The mod's own file, whole or not at all (2026-09-22): one cut short is
+  // one the mod cannot read, with the player's other keys in it.
+  await writeFileAtomic(file, JSON.stringify(root, null, 2));
   return true;
 }
 

@@ -92,13 +92,35 @@ const text = (value) => (typeof value === 'string' ? value.trim() : '');
 const playedMs = (place) => Math.max(num(place.msPlayed), num(place.stats?.playTicks) * 50);
 const deaths = (place) => Math.max(num(place.ownDeaths), num(place.stats?.deaths));
 
-/** The file, parsed, or null. Never throws; never creates it. */
-async function read(instances) {
-  if (!instances) return null;
+/**
+ * The reads in flight, by file (2026-09-22). Home asks for `recent` and
+ * `summary` together as it opens, and each read and parsed the whole file —
+ * two years of sittings — for itself: two parses of one file on the main
+ * process, a moment apart. A read asked for while one of the same file is
+ * still going shares it; once it lands, the next ask reads afresh, so
+ * nothing is kept and no answer is older than a read already under way when
+ * it was asked for. The parsed object is only ever read from, never
+ * changed, by both.
+ */
+const reading = new Map();
 
+/** The file, parsed, or null. Never throws; never creates it. */
+function read(instances) {
+  if (!instances) return Promise.resolve(null);
+  const target = file(instances);
+  const running = reading.get(target);
+  if (running) return running;
+  const job = readFresh(target).finally(() => {
+    if (reading.get(target) === job) reading.delete(target);
+  });
+  reading.set(target, job);
+  return job;
+}
+
+async function readFresh(target) {
   let raw;
   try {
-    raw = await fsp.readFile(file(instances), 'utf8');
+    raw = await fsp.readFile(target, 'utf8');
   } catch {
     return null;
   }
