@@ -966,10 +966,35 @@ button:active:not(:disabled) {
 
 .modal--spot {
   box-shadow: var(--rim), var(--shadow-lg), 0 0 0 9999px var(--scrim);
-  animation: sheet-in var(--dur-fast) var(--ease-out), spot-in var(--dur-base) var(--ease-out);
+  animation: sheet-in var(--dur-fast) var(--ease-out);
+  /* The cell the dim below shares while the pane arrives. */
+  grid-area: 1 / 1;
 }
 
 .modal--spot.modal--swap { animation: none; }
+
+/* The dim's arrival, on a layer of its own (2026-09-22). It was the pane's
+   own 9999px shadow fading in from transparent (spot-in), and a shadow that
+   changes colour is painted again every frame — the pane and a shadow the
+   size of the window, re-rastered on every frame of the arrival. For the
+   arrival the pane wears its ordinary shadows only, and a box the pane's own
+   size and radius, in the pane's cell and moving on the pane's own sheet-in,
+   carries the dim and fades it in on opacity, which the compositor does
+   alone. When it lands, modal.js takes the box away and the pane has its
+   9999px shadow back — the settled dialog is exactly what it was. Under the
+   pane the box paints nothing: an outer shadow is never drawn inside its
+   own box, so the glass still samples the undimmed world. */
+.modal--spot.is-arriving {
+  box-shadow: var(--rim), var(--shadow-lg);
+}
+
+.modal__dim {
+  grid-area: 1 / 1;
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 0 0 9999px var(--scrim);
+  pointer-events: none;
+  animation: sheet-in var(--dur-fast) var(--ease-out), fade var(--dur-base) var(--ease-out);
+}
 
 .modal--spot .modal__foot {
   background-color: transparent;
@@ -977,9 +1002,6 @@ button:active:not(:disabled) {
   padding-top: var(--space-1);
 }
 
-@keyframes spot-in {
-  from { box-shadow: var(--rim), var(--shadow-lg), 0 0 0 9999px transparent; }
-}
 
 /* =========================================================================
    Toasts
