@@ -361,9 +361,16 @@ const WORLD_SLEEP_MS = 20000;
 let worldSleepTimer = null;
 let worldSleeping = false;
 
+/* Minimised or hidden, as main reports it (2026-09-22): document.hidden
+   cannot say so in this window — backgroundThrottling is off, and that
+   holds the page's visibility at "visible" — so a minimised launcher's
+   world kept turning for nobody. Paused, like hidden; never asleep, so a
+   restore is instant. */
+let away = false;
+
 function paceWorld() {
   const yielding = gameStatus() === 'playing' && !focused;
-  const resting = document.hidden || yielding;
+  const resting = document.hidden || away || yielding;
   if (!resting) {
     if (worldSleepTimer) { clearTimeout(worldSleepTimer); worldSleepTimer = null; }
     if (worldSleeping) { wakeWorld(); return; }
@@ -693,7 +700,10 @@ function wireHost() {
     maximizeButton.setAttribute('aria-label', maximized ? 'Restore' : 'Maximise');
   };
 
-  host.window.onStateChange(({ maximized }) => paintMaximize(maximized));
+  host.window.onStateChange(({ maximized, away: gone } = {}) => {
+    if (typeof maximized === 'boolean') paintMaximize(maximized);
+    if (typeof gone === 'boolean') { away = gone; paceWorld(); }
+  });
   host.window.isMaximized().then(paintMaximize);
 
 }

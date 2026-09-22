@@ -452,6 +452,16 @@ function createWindow() {
   win.on('move', persistBounds);
   win.on('maximize', () => { fitZoom(); send('window:state', { maximized: true }); });
   win.on('unmaximize', () => { fitZoom(); send('window:state', { maximized: false }); });
+  // Whether the window can be seen at all (2026-09-22). backgroundThrottling
+  // is off (above), and Electron documents that this also holds the page's
+  // visibility at "visible" — so a minimised or hidden launcher never saw
+  // document.hidden turn true, and with no game up its world went on drawing
+  // thirty frames a second into a window nobody could see. The page pauses
+  // it on this instead (app.js, paceWorld).
+  win.on('minimize', () => send('window:state', { away: true }));
+  win.on('hide', () => send('window:state', { away: true }));
+  win.on('restore', () => send('window:state', { away: false }));
+  win.on('show', () => send('window:state', { away: win.isMinimized() }));
   win.on('enter-full-screen', fitZoom);
   win.on('leave-full-screen', fitZoom);
   win.on('closed', () => { win = null; });
