@@ -107,6 +107,7 @@ const os = require('os');
 
 const nbt = require('./nbt');
 const { lane } = require('./lane');
+const { writeFileAtomic } = require('./files');
 
 /** The launcher-wide folder beside the profiles: the play record, the waypoints, the backups. */
 const SHARED_DIR = '_shared';
@@ -1702,6 +1703,49 @@ function chatLogsDirIn(instances) {
 }
 
 /**
+ * One config folder's blueclient.json, read for a stamp (2026-09-22): the
+ * object in it, an empty one when there is no file yet, and null when there
+ * is a file and it cannot be read as one.
+ *
+ * Null is the whole point. Both stamps below used to take anything they
+ * could not parse for an empty file and write it back with nothing in it but
+ * their own keys — and the file is the in-game half's whole config, every
+ * preset and switch the player has set in the mod. A file caught while the
+ * game was writing it, held open by a scanner, or cut short by a game that
+ * was killed was not a file with nothing in it; it was the player's settings
+ * one read away from being readable again, and the stamp wiped them. A
+ * stamp that cannot read the file now leaves it exactly as it is: a flag
+ * missed for one launch costs a clips folder, not a config.
+ */
+async function readForStamp(file) {
+  let raw;
+  try {
+    raw = await fsp.readFile(file, 'utf8');
+  } catch (error) {
+    return error && error.code === 'ENOENT' ? {} : null;
+  }
+  try {
+    const root = JSON.parse(raw);
+    return root !== null && typeof root === 'object' && !Array.isArray(root) ? root : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One stamp at a time per blueclient.json (2026-09-22). `stampFlags` runs
+ * inside `adopt`'s lane and `stampKeys` after it, outside any: two Play
+ * presses of one profile could each read the file, add their own keys and
+ * write it — and the second write took the first one's keys back out. A
+ * lane of the file's own, so the two queue for it without either taking the
+ * other's; one spelling of the path, the way files.js keys its fetches.
+ */
+function stampLane(file, work) {
+  const full = path.resolve(file);
+  return lane(`stamp:${process.platform === 'win32' ? full.toLowerCase() : full}`, work);
+}
+
+/**
  * Keys of the launch's own into one config folder's blueclient.json
  * (2026-09-21): a value writes the key, null takes it out. For what is per
  * account rather than launcher-wide — an offline account's own skin — and so
@@ -1709,51 +1753,47 @@ function chatLogsDirIn(instances) {
  */
 async function stampKeys(configDir, values) {
   const file = path.join(configDir, 'blueclient.json');
-  let root = {};
-  try {
-    root = JSON.parse(await fsp.readFile(file, 'utf8'));
-  } catch {
-    root = {};
-  }
-  if (root === null || typeof root !== 'object' || Array.isArray(root)) root = {};
-  let changed = false;
-  for (const [key, value] of Object.entries(values || {})) {
-    if (value === null || value === undefined) {
-      if (key in root) { delete root[key]; changed = true; }
-    } else if (root[key] !== value) {
-      root[key] = value;
-      changed = true;
+  return stampLane(file, async () => {
+    const root = await readForStamp(file);
+    if (!root) return false;
+    let changed = false;
+    for (const [key, value] of Object.entries(values || {})) {
+      if (value === null || value === undefined) {
+        if (key in root) { delete root[key]; changed = true; }
+      } else if (root[key] !== value) {
+        root[key] = value;
+        changed = true;
+      }
     }
-  }
-  if (!changed) return false;
-  await fsp.mkdir(configDir, { recursive: true });
-  await fsp.writeFile(file, JSON.stringify(root, null, 2));
-  return true;
+    if (!changed) return false;
+    await fsp.mkdir(configDir, { recursive: true });
+    // Whole or not at all (files.writeFileAtomic): the game reads this file
+    // the moment it starts, and half of one is no config at all.
+    await writeFileAtomic(file, JSON.stringify(root, null, 2));
+    return true;
+  });
 }
 
 /** Write the flags into one config folder's blueclient.json; true if anything changed. */
 async function stampFlags(configDir) {
   const file = path.join(configDir, 'blueclient.json');
-  let root = {};
-  try {
-    root = JSON.parse(await fsp.readFile(file, 'utf8'));
-  } catch {
-    root = {};
-  }
-  if (root === null || typeof root !== 'object' || Array.isArray(root)) root = {};
+  return stampLane(file, async () => {
+    const root = await readForStamp(file);
+    if (!root) return false;
 
-  let changed = false;
-  for (const [key, value] of Object.entries(flags)) {
-    if (root[key] !== value) {
-      root[key] = value;
-      changed = true;
+    let changed = false;
+    for (const [key, value] of Object.entries(flags)) {
+      if (root[key] !== value) {
+        root[key] = value;
+        changed = true;
+      }
     }
-  }
-  if (!changed) return false;
+    if (!changed) return false;
 
-  await fsp.mkdir(configDir, { recursive: true });
-  await fsp.writeFile(file, JSON.stringify(root, null, 2));
-  return true;
+    await fsp.mkdir(configDir, { recursive: true });
+    await writeFileAtomic(file, JSON.stringify(root, null, 2));
+    return true;
+  });
 }
 
 module.exports = {
