@@ -109,7 +109,13 @@ export function render() {
   return root;
 }
 
+/* The last subscription is dropped first (2026-09-22): the shell calls
+   mounted() again when it repaints the page in place — any 'profiles' or
+   'settings' notification on this route, a Play pressed here among them —
+   without an unmounted() between, and each of those left one more
+   worlds:changed listener on the IPC channel for the launcher's life. */
 export function mounted() {
+  if (changedOff) changedOff();
   changedOff = host.worlds.onChanged((payload) => onBackupLanded(payload));
 }
 
@@ -120,9 +126,20 @@ export function unmounted() {
 
 /* Registered once, module-wide — the Clips page does the same. A stale
    listener is harmless: it checks the page is actually on screen before
-   doing anything, and coming back to Worlds rebuilds it from scratch anyway. */
+   doing anything, and coming back to Worlds rebuilds it from scratch anyway.
+
+   And not more than once every few seconds, Clips' rule (2026-09-22): a
+   refresh lists every saves folder and measures every world's size — a
+   walk of each world's files in main — and Windows sends a focus event for
+   every alt-tab and every dialog that closes. */
+const FOCUS_RESCAN_MS = 4000;
+let lastRescan = 0;
 window.addEventListener('focus', () => {
-  if (root?.isConnected) refresh();
+  if (!root?.isConnected) return;
+  const now = Date.now();
+  if (now - lastRescan < FOCUS_RESCAN_MS) return;
+  lastRescan = now;
+  refresh();
 });
 
 function activeProfile() {
@@ -147,9 +164,16 @@ function groupSection() {
   return { node, title, note, grid };
 }
 
+/* Only the newest list is painted (2026-09-22): a focus refresh and the one
+   after an action can be in flight together, and an older answer landing
+   last put a world just deleted back on the page until the next look. */
+let refreshSeq = 0;
+
 async function refresh() {
+  const seq = ++refreshSeq;
   const result = await host.worlds.list().catch(() => null);
   if (!root?.isConnected) return;              // the tab was left while this was in flight
+  if (seq !== refreshSeq) return;              // a newer list is on its way
 
   if (!result?.ok) {
     countEyebrow.textContent = '';
@@ -534,7 +558,8 @@ async function backUpNow(card, button) {
   if (label) label.textContent = 'Backing up…';
 
   const world = card.item;
-  const result = await host.worlds.backup(world.profileId, world.folder);
+  // A call that throws is a failed backup, not a button left on "Backing up…".
+  const result = await host.worlds.backup(world.profileId, world.folder).catch(() => null);
 
   button.disabled = false;
   if (label) label.textContent = original;
@@ -647,6 +672,11 @@ async function deleteWorld(card) {
 
 /* ----------------------------------------------------------- bring it here */
 
+/* One copy per world at a time (2026-09-22): the copy is a whole world
+   folder and takes a while, and a second press in that time brought it
+   over twice — "New World" and "New World (2)". */
+const bringing = new Set();
+
 async function bringHere(card) {
   const item = card.item;
   const profile = activeProfile();
@@ -655,8 +685,11 @@ async function bringHere(card) {
     setRoute('profiles');
     return;
   }
+  if (bringing.has(item.path)) return;
 
-  const result = await host.worlds.bring(profile.id, item.path);
+  bringing.add(item.path);
+  const result = await host.worlds.bring(profile.id, item.path).catch(() => null);
+  bringing.delete(item.path);
   if (result?.ok) {
     toast(`${result.name || item.name} brought into ${profile.name}`, 'success');
     refresh();
