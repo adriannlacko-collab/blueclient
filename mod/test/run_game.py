@@ -211,11 +211,31 @@ def jcmd_for(mc):
     return str(tool if tool.exists() else deps.jdk25() / "bin" / "jcmd")
 
 
+def allocation_settings():
+    """JFR's profile settings with every new-TLAB and outside-TLAB allocation recorded with its stack.
+
+    With TLABs pinned to 16 KB (see run()) that is one event per 16 KB a thread
+    allocates: every allocation site that allocates at all shows up in
+    proportion, rather than the few hundred samples a second the profile
+    setting keeps."""
+    out = deps.CACHE / "alloc.jfc"
+    text = (deps.jdk25() / "lib" / "jfr" / "profile.jfc").read_text()
+    for event in ("jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB"):
+        head = f'<event name="{event}">'
+        at = text.index(head)
+        end = text.index("</event>", at)
+        block = text[at:end].replace('control="gc-enabled-high">false<', 'control="gc-enabled-high">true<')
+        text = text[:at] + block + text[end:]
+    out.write_text(text)
+    return out
+
+
 def record(mc, game, run_dir, seconds):
-    """A JFR recording of `seconds` of play (profile settings: allocation samples, per-thread allocation totals, GC)."""
+    """A JFR recording of `seconds` of play: per-thread allocation totals, every TLAB refill with its stack, GC."""
     out = run_dir / "alloc.jfr"
-    subprocess.run([jcmd_for(mc), str(game.pid), "JFR.start", "name=bc", "settings=profile", f"duration={seconds}s",
-                    f"filename={out}"], env=clean_env(), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run([jcmd_for(mc), str(game.pid), "JFR.start", "name=bc", f"settings={allocation_settings()}",
+                    f"duration={seconds}s", f"filename={out}"],
+                   env=clean_env(), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(seconds + 8)
     return out
 
@@ -233,7 +253,8 @@ def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0,
     Path(env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True, mode=0o700)
     info = deps.version_json(mc)
     profile = deps.fabric_profile(mc)
-    cmd = [java_for(mc), "-Xmx3G", "-Xss4M",
+    measure = ["-XX:TLABSize=16k", "-XX:-ResizeTLAB"] if jfr else []
+    cmd = [java_for(mc), "-Xmx3G", "-Xss4M", *measure,
            "-Djdk.net.hosts.file=" + str(hosts_file()),
            *[a for a in profile.get("arguments", {}).get("jvm", [])],
            "-cp", ":".join(str(p) for p in classpath(mc)),
