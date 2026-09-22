@@ -74,6 +74,11 @@ if (!app.requestSingleInstanceLock()) {
     // shortcut is the player asking for it (2026-09-22 — 1.9.0's hidden
     // window took the click and focus()ed a window nobody could see).
     if (revealWindow) revealWindow();
+    // And one put away by "When the game starts: Hide" comes back too
+    // (2026-09-22): Electron's focus() does nothing to a hidden window, so
+    // with a game running the shortcut was the one way back to the launcher
+    // and it did nothing at all.
+    if (!win.isVisible()) win.show();
     if (win.isMinimized()) win.restore();
     win.focus();
   });
