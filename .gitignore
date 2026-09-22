@@ -1,0 +1,5 @@
+node_modules/
+launcher/resources/mod/
+launcher/resources/shaderpack/
+*.asar
+*.log

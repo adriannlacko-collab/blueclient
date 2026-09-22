@@ -1,0 +1,713 @@
+/* =========================================================================
+   BlueClient — application shell
+
+   Liquid glass (2026-09-08). The chrome is no longer a painted bar across the
+   top: it breaks into three floating islands — the wordmark, the tabs, the
+   account and the window buttons — each a pane of glass over the world, with
+   a hairline round it and a specular along its top. Below them, one centred
+   column of content on the same world.
+
+   The world is the reason any of this works. Glass needs something worth
+   seeing through, and the panorama is already there, already turning.
+   ========================================================================= */
+
+#root {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100vh;
+  background: var(--bg-app);
+}
+
+/* ---- Shell: the panorama, and everything on it ------------------------- */
+.shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bg-app);
+}
+
+/* All of it — still, live canvas, sky and sun — lives in one box (2026-09-22).
+
+   It used to be four siblings of the masthead at z-index -1, and that is what
+   Adrian photographed as "a light glitch": a hairline vertical seam a few
+   shades dark, at the same window x inside EVERY pane of glass on the page
+   and nowhere else. It is Chromium's, not ours. A pane's backdrop-filter
+   reads the backdrop out of the render pass it sits in, and with ten of them
+   on a page (the three masthead islands, the two page buttons, three profile
+   cards, the editor) the compositor splits that pass; on one side of the cut
+   the blur has the sun layer in it and on the other it has slightly less, so
+   wherever the sun is bright the two halves differ by about four levels and
+   the join reads as a line. Proved by elimination in the real launcher: the
+   seam needs the sun AND a second large pane — switching backdrop-filter off
+   on either .topnav or .profile-editor ends it — while the blur radius, the
+   blend mode, layer promotion (translateZ, will-change, contain) and the
+   backdrop image all make no difference to it.
+
+   One box with `isolation: isolate` ends it because the four layers flatten
+   into a single surface before any glass reads them: there is no longer a
+   sun layer for the split to lose. Measured at Adrian's own window: the step
+   at the seam goes from 13.7 (sum over RGB) to 0.3, which is nothing. It is
+   also less work per frame — every pane blurs one texture instead of
+   re-compositing four — and it is what the blend modes below always meant,
+   since the sky multiplies and the sun screens against the world alone.
+
+   The world behind everything, like the title screen — and, since 2026-09-02,
+   literally the world the title screen turns and blueclient.net draws: the
+   same code (js/world.js) drawing live on a canvas, over a still of its own
+   first frame painted here, so nothing changes when it comes up.
+
+   It sits still. Until 2026-09-02 it drifted a few pixels after the cursor
+   (parallax.js, now deleted), which was worth it against a photograph and is
+   noise against a world that is already turning.
+
+   The still is fitted to the height, never covered: the world's field of
+   view is vertical, so live and still agree to the pixel at any window
+   width the still spans. */
+.shell > .shell__back {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  isolation: isolate;
+}
+
+.shell__back::before,
+.shell__back > .world {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.shell__back::before {
+  content: "";
+  background: var(--bg-app) url("../assets/art/backdrop.jpg") center / auto 100% no-repeat;
+}
+
+/* A picture of the player's own instead of the world (2026-09-21, the
+   Background capsule on Home): app.js puts its blob URL on the shell as
+   --backdrop-image and the class on; the picture covers the window in the
+   still's place, under the same blur and brightness as the world, and the
+   evening light is put away — the light is the world's, and a photograph
+   shows as the player chose it. The world's canvas is not mounted then. */
+.shell--picture .shell__back::before {
+  background: var(--bg-app) var(--backdrop-image) center / cover no-repeat;
+}
+
+.shell--picture .shell__sky,
+.shell--picture .shell__sun { display: none; }
+
+.shell__back > .world {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+}
+
+.shell__back > .world.is-ready { opacity: 1; }
+
+/* Asleep behind a game (app.js, sleepWorld): the canvas is one pixel and
+   hidden, the still shows in its place. */
+.shell__back > .world.is-asleep { opacity: 0; }
+
+/* The wash, and the light. The wash is far lighter than the stone launcher
+   needed — the panels carry their own tint now, so the world no longer has to
+   be painted over to be read against. The bloom over it is cyan, and it is
+   kept to the corners the panels sit in: the panorama itself must keep its own
+   colour, because it is the one thing on this screen the interface is not
+   allowed to tint. */
+.shell__back::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--bloom), var(--backdrop-scrim);
+}
+
+/* Golden hour (2026-09-17). The world is drawn at midday and the launcher
+   shows it at evening: Adrian picked it off the first mockup sheet ("I really
+   like lit glass combined with golden hour") and asked the same day for it
+   "slightly less visible … good that its golden hour colors but slightly
+   less overwhelming", then "significantly more" toned down — the weight here is
+   a little under half of the sheet's: the colours of evening, not the evening. Two layers over the world and under everything else, both light
+   and not paint: the sky multiplied from indigo at the top through rose to
+   orange at the horizon and gone by the meadow, and the sun screened in low
+   on the left with its haze. Neither filters the world — the blur and
+   brightness rule below is still the only filter, so a launcher with both
+   sliders at rest still composites the canvas with no filter layer — and the
+   panorama the game ships and the world blueclient.net draws are untouched:
+   this is the launcher's light, not the world's. The bloom and the wash in
+   tokens.css are warm to match. app.js puts the two elements in the backdrop
+   box; the world's canvas is prepended to it, so they sit over the world in
+   tree order — which is the paint order inside the box, none of the four
+   carrying a z-index of its own. */
+.shell__back > .shell__sky,
+.shell__back > .shell__sun {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.shell__back > .shell__sky {
+  background: linear-gradient(
+    to bottom,
+    rgba(30, 24, 90, 0.28) 0%,
+    rgba(140, 60, 120, 0.17) 18%,
+    rgba(255, 120, 50, 0.17) 34%,
+    rgba(255, 200, 120, 0.04) 46%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  mix-blend-mode: multiply;
+}
+
+.shell__back > .shell__sun {
+  background:
+    radial-gradient(520px 320px at 26% 36%, rgba(255, 210, 130, 0.32), rgba(255, 140, 60, 0.11) 42%, transparent 72%),
+    radial-gradient(1500px 560px at 30% 42%, rgba(255, 160, 80, 0.09), transparent 70%),
+    radial-gradient(900px 300px at 50% 100%, rgba(255, 140, 70, 0.04), transparent 70%);
+  mix-blend-mode: screen;
+}
+
+/* No page treats the world differently: the world is sharp on every page,
+   and the light above is the only thing over it. */
+
+/* Background blur and brightness (2026-09-15): Settings › General ›
+   Background blur, and Background brightness beside it since 0.38.1. The
+   root carries `--world-blur`, 1 to 100, only while that slider is off zero,
+   and `--world-brightness`, 10 to 99, only while that one is under a hundred
+   — see paintWorldBlur and paintWorldBrightness in js/state.js — so with
+   both at rest nothing below applies and the world is composited exactly as
+   it always was, no filter layer at all. (Blur rests at 15 by default since
+   0.38.1, so most launchers do carry the layer; 0 is still the way out.)
+   One filter for both, on the still and the live world alike, since either
+   can be what is on screen: the blur in CSS pixels, the brightness as the
+   fraction of the world's own light that is drawn.
+
+   The scale is the blur's edge: a blurred layer fades to nothing along its
+   own border, and at 100 that is a soft dark frame sixty pixels deep all
+   round the window. Grown by a hundredth-and-a-half per unit the faded band
+   falls outside the shell, which clips it. The world's field of view is
+   vertical, so at the top of the slider the horizon sits a few pixels
+   further off than sharp — invisible through that much blur. Brightness
+   alone leaves the scale at one. */
+/* The two numbers sit on the backdrop box itself, not on <html> (2026-09-22):
+   a custom property on the document root is inherited by every element in the
+   document, so each pointer move on either slider marked the whole page for a
+   style recalc — the root-property rule in CLAUDE.md, which the cape clock
+   taught. Only these four rules ever read them. */
+.shell__back[data-world-blur]::before,
+.shell__back[data-world-blur] > .world,
+.shell__back[data-world-dim]::before,
+.shell__back[data-world-dim] > .world {
+  filter: blur(calc(var(--world-blur, 0) * 0.24px)) brightness(calc(var(--world-brightness, 100) / 100));
+  transform: scale(calc(1 + var(--world-blur, 0) / 250));
+}
+
+/* ---- What's new (2026-09-11) ------------------------------------------- */
+
+/* One sentence about the release, beside the version line on Home, once. A
+   child of the shell rather than of Home, because Home is rebuilt on every
+   visit and the sentence has to outlive that until it is read; app.js places
+   it by measuring the version line and clears it on a press or a page change.
+
+   A tint, not a pane — the same rule as the launcher's tooltip. It is the
+   deep floor (--glass-deep) with a hairline and NO backdrop-filter of its
+   own: a blur inside the shell over a turning world is a second sheet of
+   glass, and a surface without a blur is the one kind that may ease in.
+   White type at the launcher's smallest size, with the shadow every white
+   line over the world carries. */
+.whats-new {
+  position: absolute;
+  left: var(--space-6);
+  bottom: var(--space-4);
+  z-index: var(--z-sticky);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 2 * var(--space-6));
+  padding: 3px var(--space-2) 3px var(--space-3);
+  border-radius: var(--radius-pill);
+  background-color: var(--glass-deep);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+  color: var(--text-1);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-shadow: var(--plate-shadow);
+  white-space: nowrap;
+  animation: rise var(--dur-fast) var(--ease-out);
+}
+
+.whats-new__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The glyph says it goes away; the whole capsule is the button. */
+.whats-new__close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--text-2);
+}
+
+.whats-new__close svg { width: 12px; height: 12px; }
+.whats-new:hover .whats-new__close { color: var(--text-1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .whats-new { animation: none; }
+}
+
+/* =========================================================================
+   Masthead — three floating islands over the world.
+   ========================================================================= */
+.masthead {
+  -webkit-app-region: drag;
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr);
+  align-items: center;
+  height: var(--masthead-h);
+  padding: 0 var(--space-4);
+  gap: var(--space-3);
+  /* No fill and no border. The islands are the chrome; the strip between
+     them is world, and is still the window's drag handle. */
+  background: none;
+}
+
+/* The material. Every island, card, menu and modal in the launcher is this
+   and nothing else: a tint, a blur that saturates, a hairline, a specular
+   along the top edge, and a soft distance underneath.
+
+   The blur is the expensive part, so it belongs to CONTAINERS only. Rows,
+   chips and fields inside a container are a tint on it, never a second sheet
+   of glass — see the note at the head of tokens.css. */
+.glass {
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--edge) solid var(--outline);
+  box-shadow: var(--rim), var(--shadow-md);
+}
+
+/* ---- Wordmark ---------------------------------------------------------- */
+.brand {
+  /* A button since 2026-09-10 (it goes home): its own font and colour, no
+     drag, and a hand so it reads as one. */
+  -webkit-app-region: no-drag;
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: start;
+  height: 54px;
+  padding: 0 var(--space-5) 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+}
+
+/* Round, like everything else on the chrome (Adrian, 2026-09-09, evening:
+   "make the blueclient logo in the top left rounded like a circle so it
+   matches the overall feeling"). Until 2026-09-21 the picture was the square
+   tile cropped to the circle by this frame; it is the disc mark now
+   (logo-round.png, the letter drawn for a disc), and the frame keeps its
+   hairline of the glass's own outline so the edge reads as deliberate. */
+.brand__mark {
+  width: 29px;
+  height: 29px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+.brand__mark img { width: 100%; height: 100%; object-fit: cover; }
+.brand__mark svg { width: 100%; height: 100%; }
+
+.brand__name {
+  font-size: 19.5px;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-1);
+  /* White type on glass needs a shadow of its own, because what is behind the
+     glass is whatever the world happens to be turning past. */
+  text-shadow: var(--plate-shadow);
+}
+
+/* =========================================================================
+   Tabs — one island, five capsules, a travelling tint behind them.
+   ========================================================================= */
+.topnav {
+  -webkit-app-region: no-drag;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-self: center;
+  height: 62px;
+  padding: 4px;
+  border-radius: var(--radius-2xl);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--edge) solid var(--outline);
+  box-shadow: var(--rim), var(--shadow-md);
+}
+
+/* Two decks: the glyph rides above its word. (They were taken away on
+   2026-09-07 and put back the same afternoon — Adrian: "I liked the icons in
+   the top bar tho.") */
+.nav-item {
+  /* Over the travelling tint, which is absolutely positioned behind them. */
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 96px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-xl);
+  color: var(--text-2);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  text-shadow: var(--plate-shadow);
+}
+
+.nav-item__icon { display: flex; }
+.nav-item svg { width: 22px; height: 22px; }
+.nav-item:hover { color: var(--text-1); }
+
+/* At the smallest window the launcher opens to, the tabs and the account
+   island were within fifteen pixels of overlapping. The tabs give up their
+   generous minimum first. */
+@media (max-width: 1140px) {
+  .nav-item {
+    min-width: 0;
+    padding: 0 var(--space-3);
+  }
+}
+
+/* All the button keeps is its brighter ink; the fill travels underneath. */
+.nav-item.is-active {
+  color: var(--text-1);
+}
+
+/* The travelling tint. It rides behind the tabs, which are lifted over it so
+   their glyphs and labels stay legible as it passes underneath. A tint on the
+   island's own glass — not another pane of it, and no accent rail: the accent
+   is spent on Play, and a second one in the chrome makes neither mean much. */
+.nav-slide {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 0;
+  pointer-events: none;
+  border-radius: var(--radius-xl);
+  background-color: var(--panel-hover);
+  box-shadow: inset 0 1px 0 0 var(--spec), 0 4px 14px rgba(0, 0, 0, 0.20);
+}
+
+/* Armed only once the slab has been placed and that placement flushed
+   (ui/tabstrip.js): a transition armed in the same style pass as the first
+   placement runs it, and the tint slides in from the strip's left edge —
+   which reads as the launcher deciding what is selected rather than showing
+   it. The masthead never showed it, because its slab is placed by the route
+   before the frame; Settings' bar and the profile editor's icon row did, on
+   every arrival, until 2026-09-15. */
+.nav-slide.is-ready {
+  transition:
+    transform var(--dur-switch) var(--ease-glide),
+    width var(--dur-switch) var(--ease-glide),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.nav-slide.is-away { opacity: 0; }
+
+/* Under the pointer (2026-09-09): a short glide, so the tint keeps up with the
+   hand without snapping to it, and it may change width as it passes a tab. */
+.nav-slide.is-dragging {
+  transition:
+    transform 70ms linear,
+    width 120ms var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+/* The strip is dragged on, so the browser must not scroll or select for it. */
+.topnav {
+  touch-action: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-slide.is-ready { transition: none; }
+}
+
+/* ---- Right island: the account, then the window controls --------------- */
+.masthead__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  justify-self: end;
+  -webkit-app-region: no-drag;
+}
+
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+}
+
+.icon-btn svg { width: 18px; height: 18px; }
+.icon-btn:hover { background: var(--hover); color: var(--text-1); }
+
+/* ---- Account chip ------------------------------------------------------ */
+.account-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 54px;
+  padding: 0 var(--space-4) 0 var(--space-2);
+  max-width: 210px;
+  text-align: left;
+  color: var(--text-1);
+  border-radius: var(--radius-pill);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+}
+
+/* The same glass one step lighter — NOT --panel-hover, which is a tint meant
+   to sit on glass rather than to replace it. At 0.16 white it threw away the
+   chip's own 0.66 dark floor, so the one control that must stay readable went
+   from a dark capsule to a bright one with the sky showing through it
+   (2026-09-09, Adrian: "when hovering, it changes too much"). The mod cards
+   are the measure — same 6% white mixed through the resting tint. */
+.account-chip:hover,
+.account-chip[aria-expanded="true"] { background-color: var(--glass-quiet-hover); }
+
+/* A pixel head is already square; it stays square inside the capsule. */
+.account-chip__face {
+  display: block;
+  flex: none;
+  width: 29px;
+  height: 29px;
+  border-radius: var(--radius-xs);
+  image-rendering: pixelated;
+  background-color: var(--surface-3);
+  background-repeat: no-repeat;
+  box-shadow: inset 0 0 0 var(--edge) var(--outline);
+}
+
+.account-chip__name {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  min-width: 0;
+  text-shadow: var(--plate-shadow);
+}
+
+.account-chip__caret {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.account-chip__caret svg { width: 15px; height: 15px; }
+
+/* ---- Window controls: the last island ---------------------------------- */
+.window-controls {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  height: 54px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+  -webkit-app-region: no-drag;
+}
+
+.window-btn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  color: var(--text-2);
+}
+
+.window-btn svg { width: 12px; height: 12px; }
+.window-btn:hover { background: var(--hover); color: var(--text-1); }
+.window-btn:active { background: var(--pressed); }
+.window-btn--close:hover { background: var(--danger); color: var(--on-danger); }
+
+/* =========================================================================
+   Content region — one centred column with a max width
+   ========================================================================= */
+.main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  -webkit-app-region: no-drag;
+  /* The page slides in from one side; this is what stops that travel showing
+     as a sideways scrollbar for the length of the animation. */
+  overflow: hidden;
+}
+
+.page {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+  /* Room for the scrollbar is reserved on both sides whether or not one is
+     needed, so the centred column sits in exactly the same place on every
+     section. */
+  scrollbar-gutter: stable both-edges;
+}
+
+/* Switching tabs slides the page in from the side you came from (2026-09-07,
+   Adrian asked for it). Travelling sideways says *which way you moved along
+   the bar*, so the five tabs read as one strip you walk along rather than five
+   unrelated screens that happen to share a masthead.
+
+   Layout still never animates. This is a transform on a page already sitting
+   in its final position — nothing reflows, and .main clips the travel. */
+.page--enter {
+  animation: page-slide var(--dur-fast) var(--ease-out);
+}
+
+.page--enter[data-enter="back"] {
+  animation-name: page-slide-back;
+}
+
+/* No opacity in either of these, and that is not a taste call: an ancestor at
+   opacity below 1 becomes a Backdrop Root, so every pane of glass under it
+   loses the world behind it for the length of the animation and then snaps
+   back — which is the "slight lagg ... more transparent for half a second"
+   Adrian saw on every page change (2026-09-08). The travel alone still says
+   which way you moved along the bar. */
+@keyframes page-slide {
+  from { transform: translate3d(var(--page-slide), 0, 0); }
+  to { transform: none; }
+}
+
+@keyframes page-slide-back {
+  from { transform: translate3d(calc(var(--page-slide) * -1), 0, 0); }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page--enter { animation: none; }
+}
+
+/* The warm-up host (2026-09-15, js/warmup.js): the pages the bar can reach,
+   a dropdown and a dialog, on screen at full size for the shell's first two
+   frames so the graphics card compiles their shaders before the player can
+   ask for one. One percent, not zero — the compositor rasterises nothing it
+   will not draw, and it will not draw opacity 0. `contain` makes the host the
+   box the sample dialog's fixed scrim and the sample menu fill, rather than
+   the window. Nothing in here takes the pointer or the focus. */
+.warmup {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  opacity: 0.01;
+  pointer-events: none;
+  contain: strict;
+  overflow: hidden;
+}
+
+.warmup > .page {
+  position: absolute;
+  inset: 0;
+}
+
+/* The two samples that are not in the host — a dropdown and a dialog — so
+   their backdrop blur is drawn against the world the way the real ones' is
+   (warmup.js says why). The dialog's scrim is the real scrim's box without
+   its dim and its fade; the one percent sits on the pane and the menu. */
+.warmup-sample,
+.warmup-sample * {
+  pointer-events: none;
+}
+
+.menu.warmup-sample {
+  z-index: 500;
+  left: 40%;
+  top: 30%;
+  opacity: 0.01;
+}
+
+.scrim.warmup-sample {
+  z-index: 500;
+  background: transparent;
+  animation: none;
+}
+
+.scrim.warmup-sample > .modal {
+  opacity: 0.01;
+}
+
+.page__inner {
+  display: flex;
+  flex-direction: column;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+/* Whatever the page can do sits at the top right of its column, first thing
+   in reach — the content runs below it. */
+.page-actions {
+  order: -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* Mods hangs its filters on the same row: search and the profile picker at
+   the left, the count and the buttons at the right. Every control is given
+   the buttons' height so the row reads as one bar. */
+.page-actions--tools .search .input,
+.page-actions--tools .profile-picker {
+  height: 44px;
+}
+
+/* The search box has one width on this row and the gap in the middle takes
+   every change — the count is live ("10 of 14 enabled" becomes "9 of 14"
+   as a switch is flipped), and while the box shared the row's give with the
+   spacer, half of each change in the count's width went into the box, so
+   the box and the picker beside it slid a few pixels on every flip
+   (Adrian, 2026-09-14: "the search bar and profile selection above slightly
+   switches position by a few pixels"). Digits at one width for the same
+   reason. */
+.page-actions--tools .search { flex: 0 1 240px; }
+.page-actions--tools .eyebrow { font-variant-numeric: tabular-nums; }

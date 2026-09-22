@@ -1,0 +1,530 @@
+/* =========================================================================
+   BlueClient — design tokens
+   One source of truth for colour, type, space, radius, glass, motion.
+   Nothing below this file may hardcode a colour or a duration.
+
+   Direction: LIQUID GLASS (2026-09-08, Adrian's call, replacing "vanilla
+   Minecraft, enhanced" as the launcher's look — the mod is untouched and
+   stays genuine vanilla; see CLAUDE.md).
+
+   The launcher is a tool, not the experience. The experience is the game the
+   Play button opens, and that stays the game's own. What the launcher owes
+   the player is the world behind it and a way in that feels good to press.
+
+   So every surface here is glass over the panorama: it blurs AND saturates
+   what is behind it, wears a one-pixel specular edge along its top, and
+   nests its corners concentrically. That is the whole system — there is no
+   opaque stone slab left anywhere, no bevel pair, no square corner, and no
+   gradient poured into a control.
+
+   THE ONE RULE THAT KEEPS IT FROM COLLAPSING: glass is the container layer.
+   A card is glass; the rows inside it are a tint ON that glass, never a
+   second sheet of it. Adrian, 2026-09-07, when every mod card was blurred:
+   "everything is too glassy now, I like the glass but its too much." He was
+   right, and the fix is not less glass, it is glass having a level. Stacked
+   blurs also cost real frames over a live canvas.
+   ========================================================================= */
+
+:root {
+  /* ---- Type ---------------------------------------------------------
+     Inter, still. It is the closest free companion to the face this look
+     comes from, it is already shipped locally as a variable woff2, and the
+     CSP here forbids remote styles — a webfont fetched from Google at run
+     time is not an option and should not become one. */
+  --font-sans: Inter, "Segoe UI Variable Text", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-sans);
+  --font-brand: var(--font-sans);
+  --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, "SF Mono", monospace;
+
+  --text-2xs: 10.5px;
+  --text-xs: 11.5px;
+  --text-sm: 12.5px;
+  --text-md: 13.5px;
+  --text-lg: 15px;
+  --text-xl: 18px;
+  --text-2xl: 23px;
+  --text-3xl: 30px;
+  --text-4xl: 40px;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.32;
+  --leading-normal: 1.55;
+
+  /* Tighter than it was. This look sets its headings close. */
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.09em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- Space (4px base) --------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 56px;
+  --space-10: 72px;
+
+  /* ---- Radius -------------------------------------------------------
+     Real numbers now; they were all `0` until 2026-09-08. Corners nest
+     concentrically: a child's radius is its parent's minus the padding
+     between them, which is why --radius-md sits exactly --space-3 under
+     --radius-2xl. Follow that when you add a surface.
+       card 26 · padding 12 · row 14
+       panel 22 · padding 12 · control 10                                 */
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-2xl: 26px;
+  --radius-pill: 999px;
+
+  /* ---- Edges --------------------------------------------------------
+     One hairline, and a specular highlight along the top. The old hard 2px
+     cut and its light/shade bevel pair are gone: glass has no cut face, it
+     has an edge that catches light. --edge stays 1px so every
+     `var(--edge) solid var(--outline)` in the sheets below becomes that
+     hairline without being rewritten one at a time. */
+  --edge: 1px;
+
+  /* ---- Chrome ------------------------------------------------------- */
+  --masthead-h: 84px;
+  /* Widened from 1040 on 2026-09-08: the glass boards use the width of the
+     window, and 1040 in a 1280 window left a band of world down each side that
+     read as the page being narrower than the chrome above it. */
+  --content-max: 1180px;
+
+  /* ---- Motion -------------------------------------------------------
+     Everything eases (2026-09-08, Adrian: "make smooth transitions everywhere
+     just like apples latest ios does"). The old rule was micro-motion only —
+     a hard cut on everything but a sanctioned handful — which belonged to the
+     cut-and-bevel look: a slab that changes state instantly reads as a
+     physical thing being pressed. Glass does not behave that way; it settles.
+
+     What did NOT change: layout still never animates. Every transition here
+     moves colour, opacity, shadow or a transform on something already sitting
+     in its final place, so nothing reflows and nothing moves the page under
+     the pointer.
+
+     --ease-spring is the house curve now: a slight overshoot, the way iOS
+     settles a control. --ease-out stays for anything that must not overshoot
+     (a progress fill, the travelling tab tint). */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+
+  --press: 0.97;
+  --press-tile: 0.99;
+  --dur-press-in: 50ms;
+  --dur-press-out: 130ms;
+
+  --dur-instant: 0ms;
+  --dur-fast: 220ms;
+  --dur-base: 180ms;
+  --ease-glide: cubic-bezier(0.3, 0.7, 0.2, 1);
+  --dur-switch: 260ms;
+  --dur-slow: 320ms;
+  --dur-slower: 420ms;
+
+  /* A picture under the pointer — a poster on the version wall, a mod's or a
+     pack's icon on Mods — zooms this much, this slowly (2026-09-14; Adrian:
+     "slightly and smoothly zoom in, very smooth and slight slow"). Nothing
+     lifts or dips beside it: one movement per hover. */
+  --zoom: 1.06;
+  --zoom-poster: 1.03;   /* the same idea on a picture four times the size */
+  --dur-zoom: 700ms;
+
+  /* ---- The launch moment (2026-09-02) -------------------------------- */
+  --dur-launch-kick: 150ms;
+  --dur-row-enter: 160ms;
+  --dur-burst: 540ms;
+  --dur-live-flash: 300ms;
+
+  /* ---- Z ------------------------------------------------------------ */
+  --z-base: 1;
+  --z-sticky: 50;
+  --z-titlebar: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  /* A menu is anchored to whatever opened it but hung off <body>, so it is a
+     sibling of the scrim rather than something inside it: below --z-modal it
+     was drawn behind any dialog it belonged to. The mode dropdown in Browse
+     skins opened into nothing — its one visible sliver stranded outside the
+     panel and under the scrim, where a click closed the panel (2026-09-10).
+     Above dialogs, below toasts. */
+  --z-menu: 350;
+  --z-toast: 400;
+}
+
+/* =========================================================================
+   Dark theme — the default. Glass over the world, lit cyan.
+
+   There is no stone ramp any more. What used to be five greys is now three
+   jobs:
+     GLASS       the container layer — masthead, cards, menus, modals.
+                 Translucent, blurred, saturated, hairline, specular top.
+     TINT        anything sitting on glass — rows, chips, fields, quiet
+                 buttons. A wash of white at a few percent. Never blurred.
+     FILL        the two things that act — Play in cyan, go-buttons in
+                 green. Opaque, so they never lose their footing.
+   ========================================================================= */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* The ground under everything, seen only where the world has not painted
+     — the first frame, and the corners of a resize. */
+  --bg-app: #0a0e15;
+  --bg-sunken: #070a10;
+
+  /* TINT — a wash of light on whatever glass it sits on. These are the old
+     surface ramp's names, doing the new job. */
+  --surface-1: rgba(255, 255, 255, 0.06);
+  --surface-2: rgba(255, 255, 255, 0.14);
+  --surface-3: rgba(255, 255, 255, 0.16);
+  --surface-inset: rgba(0, 0, 0, 0.26);
+
+  /* GLASS — the container layer. --panel and --panel-quiet are blurred
+     wherever they are used (see .glass in base.css); --panel-raised and
+     --panel-hover are the tints that sit on them and are NOT blurred.
+
+     --panel-hover is to a tint what --glass-hover is to glass: the one step a
+     tinted control takes under the pointer, and the only thing it is for. It
+     was 0.16, three points over the resting 0.13 and near enough invisible —
+     a button that answers by two points of luminance has no hover at all,
+     which is the same fault as one that flips from dark to light, measured
+     from the other end. Six points now, about half the distance a whole card
+     of glass moves, which is right: a row inside a card is a smaller thing
+     and should move less than the card. */
+  --panel: rgba(12, 18, 28, 0.56);
+  --panel-quiet: rgba(9, 14, 23, 0.66);
+  --panel-raised: rgba(255, 255, 255, 0.13);
+  --panel-hover: rgba(255, 255, 255, 0.20);
+
+  /* The chrome is always over sky — the brightest thing the panorama can
+     put behind glass — so it carries a heavier tint floor than a card does.
+     This is the single number that decides whether white type survives, and
+     it is the difference between glass that works and glass that does not. */
+  --titlestrip: rgba(9, 14, 23, 0.66);
+  --masthead: rgba(9, 14, 23, 0.66);
+
+  /* The hairline every glass surface wears, and the specular along its top. */
+  --outline: rgba(255, 255, 255, 0.26);
+  --panel-ring: var(--edge) solid var(--outline);
+  --spec: rgba(255, 255, 255, 0.55);
+
+  /* The bevel pair is retired. The names stay because forty box-shadows
+     still spell them: light is the specular, dark is nothing at all. Do not
+     reintroduce a bottom-right shade — that was the cut, and the cut is
+     gone. */
+  --bevel-light: rgba(255, 255, 255, 0.22);
+  --bevel-dark: rgba(255, 255, 255, 0);
+
+  --hover: rgba(255, 255, 255, 0.08);
+  --pressed: rgba(255, 255, 255, 0.14);
+  --selected: rgba(34, 204, 255, 0.18);
+
+  /* The profile card the editor is showing (2026-09-15, the "Tightened" mark
+     Adrian picked over the flat 3px bar): the accent on the card's own
+     hairline, a thinner ring just inside it, and a faint halo outside. */
+  --pick-rim: rgba(34, 204, 255, 0.55);
+  --pick-ring: rgba(34, 204, 255, 0.35);
+  --pick-halo: rgba(34, 204, 255, 0.06);
+
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.26);
+  --border-accent: rgba(34, 204, 255, 0.65);
+  --divider: rgba(255, 255, 255, 0.10);
+
+  --text-1: #f2f6fc;
+  --text-2: rgba(255, 255, 255, 0.70);
+  --text-3: rgba(255, 255, 255, 0.52);
+  --text-inverse: #06121a;
+
+  /* The accent. Still BlueClient's cyan, a shade brighter so it holds its
+     own over a lit panorama. */
+  --accent: #22ccff;
+  --accent-hover: #4bd8ff;
+  --accent-press: #0eb0e0;
+  --accent-lip: #0b87ad;
+  --accent-bevel-light: rgba(255, 255, 255, 0.55);
+  --accent-bevel-dark: rgba(255, 255, 255, 0);
+  --accent-quiet: rgba(34, 204, 255, 0.16);
+  --accent-quieter: rgba(34, 204, 255, 0.08);
+  --on-accent: #04222c;
+
+  /* FLAT, on purpose (2026-09-08). Adrian: "I dont quite like the gradient."
+     The names survive because a dozen rules pour --gradient into a fill, and
+     --gradient being a flat run of one colour is what turns every one of
+     them off at once. Do not put a second stop back in: the only ramps left
+     in the product are the brand mark's, which is artwork, and the bloom
+     behind the shell, which is light rather than a surface. */
+  --grad-from: #22ccff;
+  --grad-to: #22ccff;
+  --gradient: linear-gradient(var(--grad-from), var(--grad-to));
+  --gradient-hover: linear-gradient(var(--accent-hover), var(--accent-hover));
+  --gradient-press: linear-gradient(var(--accent-press), var(--accent-press));
+  --gradient-quiet: linear-gradient(var(--accent-quiet), var(--accent-quiet));
+  --gradient-selected: linear-gradient(var(--selected), var(--selected));
+
+  --success: #34d399;
+  --success-quiet: rgba(52, 211, 153, 0.16);
+  --on-success: #04231a;
+
+  /* The places on Your play, one colour each (2026-09-10; Adrian: "make the
+     different servers/places different colors not only blue shades"). Six
+     hues at one brightness so no slice outranks another by saturation; the
+     first is the accent, because the place you play most is the one to
+     recognise at a glance. Anything past the sixth is "other", in grey. */
+  --chart-1: #22ccff;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #ff7a59;
+  --chart-5: #a78bfa;
+  --chart-6: #f472b6;
+  --chart-other: rgba(255, 255, 255, 0.35);
+  /* The week on Your play is all --chart-1 since 2026-09-12 (Adrian: "all the
+     boxes should be blue"); the dim white the six days behind today wore for
+     two days, --chart-day, went with that. */
+
+  /* White since 2026-09-21 (Adrian: "make the play icon and 'play' text on
+     play button, and 'launch another', all white"); the dark ink of
+     --on-accent stays on the other solid marks. The launch moment's words
+     (.burst-words) read the same token. */
+  --on-launch: #ffffff;
+
+  --confirm: #34d399;
+  --confirm-hover: #4ee0ac;
+  --confirm-press: #1fbb85;
+  --confirm-lip: #128a61;
+  --confirm-grad-to: #34d399;
+  --confirm-gradient: linear-gradient(var(--confirm), var(--confirm));
+  --confirm-gradient-hover: linear-gradient(var(--confirm-hover), var(--confirm-hover));
+  --confirm-gradient-press: linear-gradient(var(--confirm-press), var(--confirm-press));
+  --on-confirm: #04231a;
+  --on-confirm-quiet: rgba(4, 35, 26, 0.72);
+  /* The confirm tier as a SURFACE rather than as a control. A button may be
+     solid paint — it is small, and a control is allowed to be an object. A
+     card-sized slab of it is not: --confirm at full opacity made the Microsoft
+     row the one thing in the launcher you could not see the world through
+     (2026-09-09, Adrian: "it doesn't follow the same style really").
+
+     It was a second sheet of glass for a few hours after that, which is the
+     other way to get it wrong. The row sits INSIDE the Add-account sheet, and
+     a thing inside glass is a tint on it: glass over glass composites DARKER
+     than its own container, which is how both choices came to read as dark
+     holes cut into a lighter modal. So — the green at the weight --selected
+     uses for the cyan, laid on the sheet's own glass, with --confirm on the
+     hairline carrying the recommendation. */
+  --confirm-tint: rgba(52, 211, 153, 0.22);
+  --confirm-tint-hover: rgba(52, 211, 153, 0.30);
+
+  /* The scrollbar's thumb (2026-09-14): a core of light clipped inside a rim
+     of the deep floor's colour, so it holds on sky by its rim and on grass by
+     its core. See base.css. */
+  --scroll-thumb: rgba(255, 255, 255, 0.46);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.70);
+  --scroll-rim: rgba(9, 14, 23, 0.55);
+
+  --warning: #fbbf24;
+  --warning-quiet: rgba(251, 191, 36, 0.16);
+  --danger: #ff5a5f;
+  --danger-hover: #ff7478;
+  --danger-press: #e04a4f;
+  --danger-lip: #b03136;
+  --danger-quiet: rgba(255, 90, 95, 0.16);
+
+  /* COLOUR ON GLASS (2026-09-09). A coloured button is a tint of its colour
+     over the glass — a third of it, with a rim of itself and white type — not
+     a solid slab with dark type. The slabs were the one flat, web-looking
+     thing left on the material (Adrian: "make the buttons feel more native.
+     not saying we need to remove color — color is good sometimes — but the
+     green and blue buttons doesnt feel the best"). Hover deepens the tint,
+     press thins it. Play keeps its solid fill: the one saturated thing on
+     Home is the point of it. */
+  --accent-fill: rgba(34, 204, 255, 0.34);
+  --accent-fill-hover: rgba(34, 204, 255, 0.46);
+  --accent-fill-press: rgba(34, 204, 255, 0.26);
+  --accent-rim: rgba(34, 204, 255, 0.58);
+  --confirm-fill: rgba(52, 211, 153, 0.32);
+  --confirm-fill-hover: rgba(52, 211, 153, 0.44);
+  --confirm-fill-press: rgba(52, 211, 153, 0.24);
+  --confirm-rim: rgba(52, 211, 153, 0.56);
+  /* The green of a button that adds (2026-09-14, evening): its outline and its
+     word, never its fill. Not the mint of --confirm (#34d399, hue 160), which
+     the sky reads as cyan — Adrian: "the color itself is very important it
+     needs to look like a 'confirm' color" — and not #30d158, "a bit too dark …
+     must match into the theme but at the same time not look dull". A light,
+     luminous green, hue 139, the one this audience already reads as "online"
+     and "go", at the brightness of --danger's coral since the two are a pair
+     on the drawer's rows. Only .btn--add uses it; the online dot, the earned
+     cape and the choice card keep the older green. */
+  --add: #57f287;
+  --add-rim: rgba(87, 242, 135, 0.62);
+  --add-rim-hover: rgba(87, 242, 135, 0.88);
+  --danger-fill: rgba(255, 90, 95, 0.34);
+  --danger-fill-hover: rgba(255, 90, 95, 0.48);
+  --danger-fill-press: rgba(255, 90, 95, 0.26);
+  --danger-rim: rgba(255, 90, 95, 0.58);
+  --on-danger: #2a0507;
+
+  /* The knob a switch and the profile editor's slider ride on: white, with
+     its own small shadow, the one thing on glass that is not a tint. */
+  --knob: #ffffff;
+  --knob-shadow: 0 1px 3px rgba(0, 0, 0, 0.34);
+
+  --sweep: rgba(0, 0, 0, 0.24);
+
+  --tag-version: var(--accent);
+  --tag-loader: var(--accent);
+  --tag-java: var(--accent);
+  --tag-memory: var(--accent);
+  --tag-pack: var(--confirm);
+
+  --gold: #f0c352;
+  --gold-quiet: rgba(240, 195, 82, 0.14);
+  --on-gold: #33240a;
+  --silver: #cfd8e3;
+  --silver-quiet: rgba(207, 216, 227, 0.14);
+  --on-silver: #23292f;
+  --bronze: #d69257;
+  --bronze-quiet: rgba(214, 146, 87, 0.14);
+  --on-bronze: #2f1a08;
+
+  /* ---- Depth --------------------------------------------------------
+     Soft and low. Glass sits above the world rather than being cut into it,
+     so what reads is the distance, not an edge. */
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.22);
+  --shadow-md: 0 14px 36px rgba(0, 0, 0, 0.34), 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.40);
+  /* Play emits, and it is still the only place a glow is allowed. */
+  --shadow-accent: 0 14px 48px rgba(34, 204, 255, 0.55);
+
+  /* The light on the face of a glass surface, laid over its tint. Since
+     2026-09-17 (Adrian's pick, "Lit glass", off the first mockup sheet) it is
+     a diagonal — the way a pane catches the room from one side — rather than
+     a fade down from the top edge. It is light on the material, the same
+     category as --bloom behind the shell, and not a fill poured into a
+     control: no control reads its colour from it. */
+  --sheen: linear-gradient(118deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.07) 28%, rgba(255, 255, 255, 0) 48%);
+  --sheen-raised: linear-gradient(118deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.06) 40%, rgba(255, 255, 255, 0) 60%);
+  /* Play's own, brighter, over its cyan. */
+  --sheen-launch: linear-gradient(118deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0.08) 40%, rgba(255, 255, 255, 0) 60%);
+
+  /* The rim (2026-09-17, the same pick): a pane of glass catches light on
+     every edge, not only along its top — brightest there, softer down the
+     left, a fainter thread up the right and under the bottom. Every glass
+     CONTAINER wears it in place of the lone specular; a tint on a container
+     keeps the single line. It is four inset hairlines, no spread, so it is
+     never a bevel and never a shade: the cut stays gone. */
+  --rim:
+    inset 0 1px 0 0 var(--spec),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.14),
+    inset -1px 0 0 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.12);
+
+  /* THE MATERIAL. The saturate is not a flourish: it is what separates glass
+     from fog. Drop it and the panels read as grey smoke over the world. */
+  /* A shade lighter and a shade bluer than the near-black they were until
+     2026-09-17 (0.56 of 12/18/28; 0.66 of 9/14/23): at that weight and hue
+     the panes read as smoked plastic, and Adrian read the whole launcher as
+     dull. The floor still holds white type over the sky — the chrome keeps
+     its extra weight — and the world still comes through. */
+  --glass: rgba(26, 40, 62, 0.46);
+  --glass-quiet: rgba(20, 32, 50, 0.56);
+  /* The same glass under the pointer, one step lighter, and the whole of what
+     a hover does to a glass surface. Each is its tint with 6% white mixed
+     through it — solved so the result is identical to laying --hover over the
+     resting glass, which is a highlight rather than a different material.
+
+     Every glass card used to hover to --panel-raised or --surface-3 instead:
+     tints meant to sit ON a panel, around 0.14 white, so a card threw away its
+     0.56 dark tint for a near-transparent wash and the world came through it.
+     Dark to bright, on eight cards at once (2026-09-09, Adrian: "it goes from
+     being super dark to super light. that hover effect is too noticeable").
+     The top bar is the measure — "I love the top bar": its items only warm
+     their text, its buttons take 8% white and nothing else. */
+  --glass-hover: rgba(54, 66, 86, 0.49);
+  --glass-quiet-hover: rgba(44, 55, 71, 0.59);
+  /* Popovers and modals: a menu is read in a second and covers something the
+     player was already reading, so it takes a heavier floor than a card —
+     one step past the chrome, not a different material.
+
+     It was 0.90 of a near-black (8, 12, 20) until 2026-09-09, and that is a
+     slab rather than a pane: the account menu, the profile dropdown under
+     Play and the Add-account sheet were the only surfaces in the launcher the
+     world did not reach at all, so they read as something borrowed from
+     another app (Adrian: "that dropdown or cardpopup is also way too dark and
+     doesnt match the rest of the launcher"). It is the same hue as --glass
+     now, one weight up, so a popover is recognisably cut from the same sheet
+     as the card it opened over and the panorama still moves behind it. White
+     type still clears 10:1 on it over the brightest sky the world has. */
+  --glass-deep: rgba(20, 32, 50, 0.70);
+  --glass-blur: blur(28px) saturate(1.9);
+  /* Card-sized. A backdrop filter costs with its radius, and there are twenty
+     cards on the Mods page against one masthead. */
+  --glass-blur-sm: blur(16px) saturate(1.8);
+  /* Popover-sized, and the other half of what makes --glass-deep work at a
+     weight you can see the world through. 28px does not smear a headline
+     behind a modal into colour — it leaves it readable, and a sheet with
+     someone else's words showing through it is worse than an opaque one. At
+     44 what comes through is the world's light and none of its text. The
+     radius is affordable here in a way it would not be on twenty mod cards:
+     one popover, only while it is open. */
+  --glass-blur-deep: blur(44px) saturate(1.9);
+  /* What a spotlight dialog does to everything around it (2026-09-18,
+     ui/modal.js): a soft blur of the page, not of the pane — the pane's own
+     rectangle is cut out of the layer. 9px is enough to put the page behind
+     the dialog out of focus without turning it to fog; measured at no frame
+     cost with the live world turning. */
+  --spot-blur: blur(9px) saturate(1.1);
+
+  --lift: -1px;
+  --page-slide: 30px;
+
+  --scrim: rgba(4, 8, 14, 0.42);
+
+  /* The wash over the world. Far lighter than the stone launcher needed,
+     because the panels no longer have to be read against it — they carry
+     their own tint. Two thirds of the panorama used to be paint. Warm since
+     golden hour (2026-09-17): a cool wash over an evening sky read as haze. */
+  --backdrop-scrim: linear-gradient(
+    to bottom,
+    rgba(40, 20, 60, 0.18) 0%,
+    rgba(60, 24, 40, 0.14) 45%,
+    rgba(30, 12, 20, 0.30) 100%
+  );
+
+  /* The light behind the glass — amber since golden hour (2026-09-17; it was
+     cyan). It is kept to the corners the panels sit on so the world itself
+     keeps its own colour — the panorama is the one thing on screen the UI
+     must not tint; the evening over it is light, see shell.css. */
+  --bloom:
+    radial-gradient(760px 420px at 100% 0%, rgba(255, 160, 70, 0.14), transparent 66%),
+    radial-gradient(560px 420px at 100% 100%, rgba(255, 120, 80, 0.09), transparent 64%);
+
+  --nameplate: rgba(6, 12, 22, 0.44);
+  --on-plate: #ffffff;
+  --plate-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+
+  --art-scrim: linear-gradient(
+    to bottom,
+    rgba(8, 14, 24, 0.62) 0%,
+    rgba(8, 14, 24, 0.34) 40%,
+    rgba(6, 11, 20, 0.62) 100%
+  );
+}
+
+/* There is no light theme (2026-09-09, Adrian: "remove light mode completely
+   from the launcher"). Glass over the world is the one look, and the block
+   that inverted it lived here until that day. */

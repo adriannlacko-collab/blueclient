@@ -1,0 +1,1 @@
+New in 1.11 — the launcher is quicker and quieter: a hairline glitch across the glass is gone, Play spends the waiting before you press it rather than after, Restart to update runs smooth, and a mod whose download drops is no longer lost.

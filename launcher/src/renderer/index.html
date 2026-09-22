@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- Liquid glass (2026-09-08). Every surface is glass over the world; the
+     palette, the radii and the material all live in css/tokens.css. -->
+<html lang="en" data-theme="dark" data-game-state="idle">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- No remote code, no remote styles. Images allow data: for generated avatars;
+       media is the player's own clips and screenshots, read off this machine for the Clips tab. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 script-src 'self';
+                 style-src 'self' 'unsafe-inline';
+                 img-src 'self' data: blob:;
+                 media-src 'self' file:;
+                 font-src 'self';
+                 connect-src 'self';
+                 form-action 'none';
+                 base-uri 'none'" />
+  <title>BlueClient</title>
+
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/shell.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/pages.css" />
+</head>
+<body>
+  <!-- Paint server for the brand mark: an SVG gradient has to be a real node,
+       and defining it once keeps every instance referencing the same id.
+       This is the one gradient left in the launcher — the mark is artwork,
+       and artwork is not a control. -->
+  <svg width="0" height="0" aria-hidden="true" focusable="false"
+       style="position:absolute">
+    <defs>
+      <linearGradient id="brandGradient" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#00c7ff" />
+        <stop offset="100%" stop-color="#8eebff" />
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div id="root"></div>
+  <!-- The world, shared with blueclient.net; a plain script by design, so the
+       site and the launcher run one identical file. -->
+  <script src="js/world.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

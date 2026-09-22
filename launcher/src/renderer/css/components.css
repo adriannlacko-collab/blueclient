@@ -1,0 +1,1707 @@
+/* =========================================================================
+   BlueClient — components
+   Liquid glass (2026-09-08). Every control is a tint on the glass under it,
+   rounded, with one specular line along its top edge and a soft distance
+   beneath. Hover lifts the tint; pressing dips the whole control. The old
+   language — flat fill, hard 2px cut, a bevel pair that flipped on press —
+   is gone; where a comment below still describes it, that comment is the
+   history and the rule above it is the direction.
+   ========================================================================= */
+
+/* The specular, shared by anything that reads as a raised surface. */
+.btn,
+.launch,
+.action-pill,
+.choice,
+.partner-row,
+.home__continue,
+.slider-thumb {
+  box-shadow: inset 0 1px 0 0 var(--spec),
+    var(--shadow-sm);
+  background-image: var(--sheen);
+}
+
+/* The press pop, on every button in the launcher: a clicked control dips by
+   --press while held and pops back on release. Press-in is near-instant so
+   the click still feels vanilla; only the pop back gets the ease-out. The
+   hover fill eases over the same tokens — the quiet softness that sits under
+   every control without ever animating layout. */
+/* Everything that can change under the pointer eases, and it eases on the
+   same four properties everywhere: the fill, the ink, the hairline and the
+   shadow. Nothing here moves layout — see the motion note in tokens.css. */
+button,
+a,
+input,
+select,
+.mod-card,
+.profile-card,
+.account-row,
+.add-account,
+.catalog-row,
+.clip-card,
+.skin-slot,
+.session,
+.partner-row,
+.setting-row,
+.settings-tab,
+.side-card,
+.menu__item,
+.menu__account,
+.profile-option,
+.lang-item,
+.choice,
+[role="switch"],
+[role="button"] {
+  transition:
+    transform var(--dur-press-out) var(--ease-spring),
+    background-color var(--dur-base) var(--ease-in-out),
+    border-color var(--dur-base) var(--ease-in-out),
+    box-shadow var(--dur-base) var(--ease-in-out),
+    color var(--dur-base) var(--ease-in-out),
+    opacity var(--dur-base) var(--ease-in-out);
+}
+
+button:active:not(:disabled) {
+  transform: scale(var(--press));
+  transition-duration: var(--dur-press-in);
+}
+
+/* Clickable tiles that are not <button> elements — the mod card, and anything
+   else wearing a switch or button role — press the same way. A control that
+   toggles has to feel like the ones that do. */
+[role="switch"]:active {
+  transform: scale(var(--press));
+  transition-duration: var(--dur-press-in);
+}
+
+/* The big clickable tiles dip too, but by far less: three percent reads as
+   a neat click on a small tab and as a lurch on a wide card. Same physics,
+   scaled to the size of the slab that moves. The :not(:disabled) guards
+   also outweigh the generic button press for the tiles that are buttons. */
+.partner-row:active:not(:disabled),
+.choice:active:not(:disabled),
+[role="button"]:active {
+  transform: scale(var(--press-tile));
+  transition-duration: var(--dur-press-in);
+}
+
+/* The cards that carry a picture — a mod or a resource pack on Mods, a
+   profile card, a poster on the version wall — press like everything else.
+   What they do not do is lift under the pointer: their hover is the
+   picture's slow zoom (see each), so the pointer arriving and the click are
+   one movement each, not two — Adrian (2026-09-14): "it looks bumpy when you
+   hover and press quickly since it pops 2 times … you can still use the pop
+   animation when selecting, just not when hovering". */
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .mod-card,
+  [role="switch"],
+  [role="button"] {
+    transition: none;
+  }
+}
+
+/* =========================================================================
+   Buttons
+   ========================================================================= */
+.btn {
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-4);
+  border: var(--edge) solid var(--outline);
+  background-color: var(--surface-2);
+  color: var(--text-1);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+.btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* --panel-hover, not --surface-3: 0.14 to 0.16 white is two points of
+   luminance and reads as nothing happening. Same step every other tinted
+   control takes. */
+.btn:hover:not(:disabled) {
+  background-color: var(--panel-hover);
+}
+
+/* Pressing flips the bevel — the slab goes in, not down. */
+.btn:active:not(:disabled) {
+  background-color: var(--surface-1);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+/* Every button is the same capsule of glass (2026-09-14, afternoon).
+
+   The green and cyan tiers of 2026-09-07 and 2026-09-09 are retired at
+   Adrian's word. Shown six coloured recipes over sky, grass and a card, he
+   pointed at the profile editor's plain "11 of 11 mods" instead: "just go
+   with buttons like these everywhere for the current green & cyan ones …
+   make it just the vanilla liquid glass we have". So .btn--primary,
+   .btn--secondary and .btn--confirm paint nothing: they are the plain .btn
+   above. The class names stay on the call sites because they still say which
+   button is the main one on a page and which does the safe thing, and a
+   recipe that wants that distinction back can read them. The one colour left
+   on a button is red, on the one that deletes (below).
+
+   What decides the look is where the button stands — the container rule.
+   Inside a card it is a TINT on the card's glass: --surface-2, no blur, which
+   is the button Adrian pointed at. Over the bare world — the actions row at
+   the top of every page, the capsule floating over the version wall, anything
+   marked .btn--glass — it is chrome GLASS, the top bar's own --glass-quiet,
+   blurred, with the specular, hovering to --glass-quiet-hover the way the
+   account chip does. A tint alone over the world is a see-through wash that
+   the sky decides the colour of; that was the whole story of the coloured
+   tiers, and it is the same for a grey one. Same capsule, two floors. */
+.btn--primary,
+.btn--secondary,
+.btn--confirm {
+  color: var(--text-1);
+}
+
+.page-actions .btn:not(.btn--ghost),
+.btn--glass {
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-sm);
+  text-shadow: var(--plate-shadow);
+}
+
+/* Glass hovers by lightening its own glass, never by swapping to a tint —
+   the rule every card learned on 2026-09-09. */
+.page-actions .btn:not(.btn--ghost):hover:not(:disabled),
+.btn--glass:hover:not(:disabled) {
+  background-color: var(--glass-quiet-hover);
+}
+
+.page-actions .btn:not(.btn--ghost):active:not(:disabled),
+.btn--glass:active:not(:disabled) {
+  background-color: var(--glass-quiet);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+/* A button that ADDS something wears green on its outline and its word, and
+   nothing else (2026-09-14, evening). The capsule is the same plain glass as
+   every other button — the tint inside a card, the top bar's glass over the
+   world, the same hover — and only the rim and the type take --add. Adrian
+   tried the alternatives the same hour: a filled green tier ("they dont really
+   fit in"), the Remove button's quiet-tint recipe in green ("too dark",
+   "dull"), and settled it: "keep the button how it was, with the outline
+   green only … make the text green too … not the button itself only outline
+   and text". It is on Add mods / Add resource packs, New profile, the drawer's
+   per-row Add (the same button reads Remove once the mod is on, and Remove is
+   .btn--delete) and Add account. Not on the profile editor's Add — "remove the
+   green from the add mods button inside profiles" — and not Save, Done or a
+   folder button: the green means "this puts something new here", and inside
+   the editor it sat beside "9 of 9 mods" as a pair that was not one. */
+.btn--add {
+  border-color: var(--add-rim);
+  color: var(--add);
+}
+
+.btn--add:hover:not(:disabled) {
+  border-color: var(--add-rim-hover);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+  box-shadow: none;
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text-1);
+}
+
+.btn--ghost:active:not(:disabled) {
+  background: var(--pressed);
+  box-shadow: none;
+}
+
+/* A ghost button that goes red only under the pointer — for a destructive
+   action that repeats down a list (2026-09-07). It reads as one of the quiet
+   controls until the moment it is about to be pressed, which is the only
+   moment the warning is worth anything; a red slab per row is a page that
+   shouts about deleting while you are trying to do something else. */
+.btn--danger-hover:hover:not(:disabled) {
+  background: var(--danger-quiet);
+  color: var(--danger);
+}
+
+.btn--danger-hover:active:not(:disabled) {
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+/* The button that actually deletes something is red — a tint of the colour
+   on the glass, a rim of it, white type — and it is the one coloured button
+   left (2026-09-14). It always stands inside a card or a dialog, so it never
+   has to hold over the sky. */
+.btn--danger {
+  color: var(--text-1);
+  background-color: var(--danger-fill);
+  background-image: var(--sheen);
+  border-color: var(--danger-rim);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-sm);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background-color: var(--danger-fill-hover);
+}
+
+.btn--danger:active:not(:disabled) {
+  background-color: var(--danger-fill-press);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+/* Identifiable before hovering, filled on hover. */
+.btn--delete {
+  background: var(--danger-quiet);
+  color: var(--danger);
+  box-shadow: none;
+}
+
+.btn--delete:hover:not(:disabled) {
+  background: var(--danger-fill-hover);
+  border-color: var(--danger-rim);
+  color: var(--text-1);
+}
+
+.btn--delete:active:not(:disabled) {
+  background: var(--danger-fill-press);
+  border-color: var(--danger-rim);
+  color: var(--text-1);
+}
+
+.btn--sm {
+  height: 30px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.btn--sm svg {
+  width: 13px;
+  height: 13px;
+}
+
+.btn--icon {
+  width: 36px;
+  padding: 0;
+}
+
+.btn--icon.btn--sm {
+  width: 30px;
+}
+
+.btn--lg {
+  height: 44px;
+  padding: 0 var(--space-5);
+  font-size: var(--text-lg);
+}
+
+.btn--lg svg { width: 17px; height: 17px; }
+
+.btn--block {
+  width: 100%;
+}
+
+/* =========================================================================
+   Cards
+   ========================================================================= */
+.card {
+  border-radius: var(--radius-2xl);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  border: var(--panel-ring);
+  box-shadow: var(--shadow-lg);
+}
+
+.card--pad {
+  padding: var(--space-5);
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--edge) solid var(--divider);
+}
+
+.card__title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.card__body {
+  padding: var(--space-5);
+}
+
+/* =========================================================================
+   Form controls — sunken slabs
+   ========================================================================= */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field__label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+}
+
+.field__hint {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  line-height: var(--leading-snug);
+}
+
+/* Fields are a sunken tint inside a panel; the Mods toolbar overrides the one
+   that floats on the world (see .search .input in pages.css). */
+.input,
+.select {
+  border-radius: var(--radius-md);
+  height: 36px;
+  padding: 0 var(--space-3);
+  background: var(--surface-inset);
+  border: var(--edge) solid var(--outline);
+  /* Sunken: the shade falls from the top, the opposite of a button. */
+  box-shadow: none;
+  color: var(--text-1);
+  font-size: var(--text-md);
+  width: 100%;
+}
+
+.input::placeholder {
+  color: var(--text-3);
+}
+
+.input:hover,
+.select:hover {
+  border-color: var(--border-strong);
+}
+
+.input:focus,
+.select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: var(--space-7);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa4ae' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+}
+
+.select option {
+  background-color: var(--surface-2);
+  color: var(--text-1);
+}
+
+.input-group {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.input-group .input {
+  border-radius: var(--radius-md);
+  flex: 1;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 620px) {
+  .field-row { grid-template-columns: 1fr; }
+}
+
+/* ---- Toggle switch — a vanilla slider in miniature ---------------------- */
+/* A dark groove and a raised slab handle that fills the groove's full height,
+   beveled like every other block. Off, the handle sits left over the empty
+   groove; on, it slides right and uncovers the accent filling the track. */
+/* =========================================================================
+   Switch — a round track and a circle, the way a switch is drawn now
+   (2026-09-08). It used to be a square track with the accent swept in from
+   the left, stopping at the knob's resting edge, which is exactly right for a
+   cut slab and wrong for a capsule: a pill radius turned the 16px knob into an
+   oval and left a sliver of track showing at the end of its travel. Adrian, of
+   the Mods page: "the on and on switch is glitched right now."
+
+   The whole track colours now, and a white circle rides it. The knob still
+   glides on its left offset rather than on a transform — a transformed layer
+   rasterises on its own grid and can land a hairline short of the border at
+   fractional display scales, where layout snaps to the same grid the border
+   does. Only this pseudo-element moves; nothing relayouts.
+   ========================================================================= */
+.switch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background-color: var(--surface-inset);
+  border: var(--edge) solid var(--outline);
+  transition:
+    transform var(--dur-press-out) var(--ease-spring),
+    background-color var(--dur-switch) var(--ease-glide),
+    border-color var(--dur-switch) var(--ease-glide);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  background: var(--knob);
+  box-shadow: var(--knob-shadow);
+  transition: left var(--dur-switch) var(--ease-glide);
+}
+
+.switch[aria-checked="true"] {
+  background-color: var(--accent);
+  border-color: transparent;
+}
+
+.switch[aria-checked="true"]::after {
+  left: 20px;
+}
+
+/* A segmented control is the masthead's tab strip in miniature (2026-09-09):
+   a glass track with a travelling tint behind whichever segment is picked.
+   It used to be a 30px sunken strip with a cyan thumb — Adrian: "too small,
+   doesnt quite fit in with the liquid glass" — and it was sized to its labels,
+   so the thumb was a different width on every segment. Every segment is now
+   the same width (the widest label decides), which is also what keeps the
+   things beside it from shifting when the pick changes. */
+.segmented {
+  border-radius: var(--radius-pill);
+  position: relative;
+  display: inline-flex;
+  padding: 4px;
+  gap: 2px;
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+.segmented__thumb {
+  border-radius: var(--radius-pill);
+  position: absolute;
+  top: 4px;
+  left: 0;
+  height: 36px;
+  background-color: var(--panel-raised);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+  pointer-events: none;
+  /* Slides to the picked segment the way the masthead's tint does. */
+  transition:
+    transform var(--dur-switch) var(--ease-glide),
+    left var(--dur-switch) var(--ease-glide),
+    width var(--dur-switch) var(--ease-glide);
+}
+
+.segmented__thumb:not([style*="width"]) { opacity: 0; }
+
+/* Inside a glass panel the track is a tint, not more glass: a second sheet of
+   glass over the first only stacks darkness, and the profile editor's loader
+   row read as a dark slot for it (Adrian, 2026-09-09). Same thumb, one step
+   brighter, so it still travels visibly on the lighter track.
+
+   And it is a field's height, not a bar's: 36px overall, the same as the
+   version dropdown it stands beside, rather than 46 (Adrian, 2026-09-09,
+   evening — the two were plainly different heights in one row). The track's
+   own 4px of padding comes down to 3 and the segments to 30, which keeps the
+   thumb's inset visible at the smaller size. The glass version on Clips and
+   Mods is untouched: it is a bar in its own right and was made bigger on
+   purpose that morning. */
+.segmented--tint {
+  background-color: var(--surface-1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 3px;
+  height: 36px;
+}
+
+.segmented--tint .segmented__thumb {
+  background-color: var(--panel-hover);
+  top: 3px;
+  height: 30px;
+}
+
+.segmented--tint .segmented__item {
+  height: 30px;
+  padding: 0 var(--space-3);
+}
+
+.segmented__item {
+  border-radius: var(--radius-pill);
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 112px;
+  padding: 0 var(--space-4);
+  height: 36px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.segmented__item:hover {
+  color: var(--text-1);
+}
+
+.segmented__item[aria-selected="true"] {
+  color: var(--text-1);
+  font-weight: var(--weight-semibold);
+}
+
+/* The invisible twin of each label, in the picked weight, so a segment is as
+   wide as its label will ever be and the bar never grows with the pick —
+   see segmented.js. */
+.segmented__ghost { font-weight: var(--weight-semibold); }
+
+/* Two labels in one cell, the widest of them invisible, so a button whose
+   wording changes with a pick ("Clips folder" / "Screenshots folder") keeps
+   one width. The one on show is centred in the room the widest one holds. */
+.label-stack {
+  display: inline-grid;
+  justify-items: center;
+}
+.label-stack > * { grid-area: 1 / 1; white-space: nowrap; }
+.label-stack__ghost { visibility: hidden; }
+
+/* ---- Slider — a sunken track, a slab of a handle ------------------------ */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  border-radius: var(--radius-pill);
+  height: 8px;
+  border: var(--edge) solid var(--outline);
+  background: linear-gradient(
+    to right,
+    var(--grad-from) 0%,
+    var(--grad-to) var(--fill, 50%),
+    var(--surface-inset) var(--fill, 50%),
+    var(--surface-inset) 100%
+  );
+}
+
+.slider::-webkit-slider-thumb {
+  border-radius: var(--radius-pill);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 20px;
+  margin-top: -8px;
+  background-color: var(--surface-3);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+/* As the scrollbar thumb: --panel-hover matched the resting --surface-3
+   exactly in dark, so grabbing the handle looked like nothing happened. */
+.slider:hover::-webkit-slider-thumb {
+  background-color: var(--border-strong);
+}
+
+/* =========================================================================
+   Badges
+   ========================================================================= */
+.badge {
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  background-color: var(--surface-3);
+  border: 1px solid var(--outline);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.badge--accent { background: var(--gradient-quiet); color: var(--accent); }
+.badge--success { background: var(--success-quiet); color: var(--success); }
+.badge--warning { background: var(--warning-quiet); color: var(--warning); }
+.badge--danger { background: var(--danger-quiet); color: var(--danger); }
+
+.badge__dot {
+  border-radius: var(--radius-pill);
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+}
+
+/* =========================================================================
+   Dropdown menu
+   ========================================================================= */
+.menu {
+  border-radius: var(--radius-xl);
+  position: fixed;
+  -webkit-app-region: no-drag;
+  min-width: 220px;
+  /* 8, not 4, so the corners nest: a 14px item inside 8px of padding is a
+     22px container exactly (2026-09-09). At 4 the menu was the one surface in
+     the launcher whose corners did not agree with the thing inside them. */
+  padding: var(--space-2);
+  background-color: var(--glass-deep);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-deep);
+  -webkit-backdrop-filter: var(--glass-blur-deep);
+  border: var(--edge) solid var(--outline);
+  /* The two things a menu was missing and every other glass surface had: the
+     one-pixel specular along its top, and a shadow. Without them a popover is
+     a flat dark rectangle laid on the page rather than a pane floating over
+     it — which is what Adrian saw ("the dropdown doesn't quite fit into the
+     overall style of the launcher"). It floats higher than a card, so it
+     takes the large shadow rather than the medium one. */
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-lg);
+  /* Above dialogs: a menu opened from inside a modal hangs off <body>, so it
+     answers to the same stack the scrim does — see --z-menu. */
+  z-index: var(--z-menu);
+  /* Entry only — closing stays a clean cut. */
+  animation: rise var(--dur-base) var(--ease-out);
+}
+
+.menu__label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-3);
+}
+
+.menu__item {
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+  color: var(--text-1);
+  text-align: left;
+}
+
+.menu__item svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+}
+
+.menu__item:hover {
+  background: var(--hover);
+}
+
+.menu__item:hover svg {
+  color: var(--text-1);
+}
+
+.menu__item--danger { color: var(--danger); }
+.menu__item--danger svg { color: var(--danger); }
+.menu__item--danger:hover { background: var(--danger-quiet); }
+
+.menu__sep {
+  height: var(--edge);
+  margin: var(--space-1) 0;
+  background: var(--divider);
+}
+
+.menu__account {
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2);
+  text-align: left;
+}
+
+.menu__account:hover {
+  background: var(--hover);
+}
+
+.menu__account-face {
+  border-radius: var(--radius-xs);
+  width: 32px;
+  height: 32px;
+  flex: none;
+  image-rendering: pixelated;
+  background-color: var(--surface-3);
+  background-repeat: no-repeat;
+  border: 1px solid var(--outline);
+}
+
+.menu__account img {
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+  background-color: var(--surface-3);
+  border: 1px solid var(--outline);
+}
+
+/* The profile's own block beside it in the quick switcher (2026-09-13) —
+   the Profiles card's cube at a menu row's size. It was a 44x28 world shot
+   for the version until then, which told a TNT profile from a diamond one
+   by name alone. The general `.menu__account img` rule above would pixelate
+   it and box it; a cube is drawn smooth at 48 and wants neither. */
+.menu__account img.menu__cube {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  image-rendering: auto;
+  background: none;
+  border: 0;
+}
+
+.menu__account-name {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.menu__account-meta {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.menu__account-check {
+  margin-left: auto;
+  color: var(--accent);
+}
+
+/* =========================================================================
+   Modal
+   ========================================================================= */
+.scrim {
+  position: fixed;
+  inset: 0;
+  -webkit-app-region: no-drag;
+  background-color: var(--scrim);
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  /* The dim arrives, the dialog on it does not fade — see scrim-in. */
+  animation: scrim-in var(--dur-base) var(--ease-out);
+}
+
+.modal {
+  border-radius: var(--radius-2xl);
+  width: 100%;
+  max-width: 460px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* Card glass, not popover glass (2026-09-09, Adrian on the delete dialog:
+     "way too dark and doesnt match the rest"). The scrim already dims the
+     world behind it, so a dialog at `--glass-deep` on top of that was the one
+     surface that read as a black slab. The deep blur stays: it is the blur,
+     not the floor, that keeps the page behind from ghosting through. */
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-deep);
+  -webkit-backdrop-filter: var(--glass-blur-deep);
+  border: var(--edge) solid var(--outline);
+  /* As .menu above: the specular and a shadow, which a modal wants even more
+     than a menu does — it is the furthest thing from the world. */
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-lg);
+  overflow: hidden;
+  /* The pane arrives at full strength and only moves; what is written on it
+     fades in separately (below).
+
+     It used to arrive on `pop`, which fades opacity from 0 — and a glass
+     pane at half opacity is half its blur: the world behind came through
+     sharp for the length of the animation and then snapped into focus at the
+     end. That snap is the "light/dark blur glitch" (Adrian, 2026-09-10), and
+     no amount of layer promotion could fix it, because a fading backdrop is
+     what the browser was correctly asked for. Nothing here touches opacity;
+     the scrim's own fade is what carries the arrival. */
+  animation: sheet-in var(--dur-fast) var(--ease-out);
+  /* Promoted before the scale starts: a blurred surface that is also moving
+     is re-sampled every frame, and without its own layer the first frames of
+     that came up unblurred. */
+  will-change: transform;
+}
+
+/* What is written on the pane, arriving a moment after it. Also the whole of
+   a panel that replaces another (`--swap`): there the pane is already on
+   screen — it is the one the last panel was on — so only its contents change,
+   and modal.js glides the height between the two. */
+.modal__head,
+.modal__body,
+.modal__foot {
+  animation: rise var(--dur-base) var(--ease-out);
+}
+
+.modal--swap {
+  animation: none;
+}
+
+.modal--wide { max-width: 620px; }
+.modal--xl { max-width: 1000px; }
+
+.modal__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+
+.modal__title {
+  font-size: var(--text-xl);
+}
+
+.modal__sub {
+  margin-top: 3px;
+  font-size: var(--text-md);
+  color: var(--text-2);
+  line-height: var(--leading-snug);
+}
+
+.modal__close {
+  border-radius: var(--radius-pill);
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.modal__close:hover {
+  background: var(--hover);
+  color: var(--text-1);
+}
+
+.modal__close svg { width: 15px; height: 15px; }
+
+.modal__body {
+  padding: 0 var(--space-5) var(--space-5);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Primary actions sit at the foot, on a shade of the modal's own glass —
+   --panel-quiet there was a second surface's worth of dark laid over one
+   that already had a floor. */
+.modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--surface-inset);
+  border-top: var(--edge) solid var(--divider);
+}
+
+/* The spotlight surround (2026-09-18, ui/modal.js `spotlight`): the scrim goes
+   clear and the dim is the pane's own outer shadow, so it stops at the pane's
+   rounded edge and the glass samples the world undimmed — the pane measures
+   the same colour as a card, which is what Adrian asked for ("the popup should
+   look exactly as it does … but around the popup … darker or slightly blurry").
+   The layer under the scrim blurs the rest through a hole modal.js cuts where
+   the pane stands. The pane wears the rim every card wears, and no band under
+   its buttons — the band was the one dark stripe on it. The dim rides in on
+   the pane's own arrival, from nothing, the way scrim-in brings the ordinary
+   dim; the blur is a cut, like the pane. The scrim's own colour transitions so
+   a panel replacing a spotlight one on the same scrim fades the dim back in. */
+.scrim { transition: background-color var(--dur-base) var(--ease-out); }
+.scrim--clear { background-color: transparent; animation: none; }
+
+.scrim__blur {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) - 1);
+  pointer-events: none;
+  backdrop-filter: var(--spot-blur);
+  -webkit-backdrop-filter: var(--spot-blur);
+}
+
+.modal--spot {
+  box-shadow: var(--rim), var(--shadow-lg), 0 0 0 9999px var(--scrim);
+  animation: sheet-in var(--dur-fast) var(--ease-out), spot-in var(--dur-base) var(--ease-out);
+}
+
+.modal--spot.modal--swap { animation: none; }
+
+.modal--spot .modal__foot {
+  background-color: transparent;
+  border-top: 0;
+  padding-top: var(--space-1);
+}
+
+@keyframes spot-in {
+  from { box-shadow: var(--rim), var(--shadow-lg), 0 0 0 9999px transparent; }
+}
+
+/* =========================================================================
+   Toasts
+   ========================================================================= */
+.toasts {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+.toast {
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 260px;
+  max-width: 380px;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--glass-deep);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-deep);
+  -webkit-backdrop-filter: var(--glass-blur-deep);
+  border: var(--edge) solid var(--outline);
+  font-size: var(--text-md);
+  pointer-events: auto;
+  animation: rise var(--dur-fast) var(--ease-out);
+}
+
+/* The leave is a real animation: toast.js removes the node on animationend,
+   so an instant hide would leave it parked in the DOM. */
+.toast[data-leaving="true"] {
+  animation: sink var(--dur-base) var(--ease-out) forwards;
+}
+
+.toast__icon { width: 17px; height: 17px; flex: none; }
+.toast--success .toast__icon { color: var(--success); }
+.toast--error .toast__icon { color: var(--danger); }
+.toast--info .toast__icon { color: var(--accent); }
+.toast--level .toast__icon { color: var(--accent); }
+
+.toast__text { flex: 1; line-height: var(--leading-snug); }
+
+/* =========================================================================
+   Empty state
+   ========================================================================= */
+/* An empty state is the one thing on its page, and every page in this
+   launcher is over the world — so it carries its own glass rather than
+   sitting on the panorama with nothing under it. */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-6);
+  margin: var(--space-4) auto;
+  max-width: 520px;
+  text-align: center;
+  border-radius: var(--radius-2xl);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--panel-ring);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+}
+
+/* Inside a sheet it is already on glass, so it drops its own — the container
+   rule again (see .choice). A drawer that came up empty was showing a card
+   DARKER than the drawer around it, which is what glass over glass always
+   does. */
+.drawer .empty,
+.modal .empty {
+  background-color: var(--panel-raised);
+  background-image: var(--sheen-raised);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.empty__icon {
+  border-radius: var(--radius-md);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background-color: var(--surface-2);
+  border: var(--edge) solid var(--outline);
+  color: var(--text-3);
+  margin-bottom: var(--space-1);
+}
+
+.empty__icon svg { width: 21px; height: 21px; }
+
+.empty__block {
+  border-radius: var(--radius-sm);
+  width: 56px;
+  height: 56px;
+  border: var(--edge) solid var(--outline);
+  opacity: 0.85;
+  margin-bottom: var(--space-2);
+}
+
+.empty__title { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+
+.empty__text {
+  font-size: var(--text-md);
+  color: var(--text-2);
+  max-width: 320px;
+  line-height: var(--leading-snug);
+}
+
+/* =========================================================================
+   Tooltip
+   ========================================================================= */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px var(--space-2);
+  /* Popover glass, and round, like every other floating thing. It was
+     --panel-raised — a 13% white tint with nothing under it — so a tip over
+     the sky was white words on a pale wash. */
+  border-radius: var(--radius-sm);
+  background-color: var(--glass-deep);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+  border: var(--edge) solid var(--outline);
+  color: var(--text-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  z-index: var(--z-overlay);
+}
+
+/* Instant, like the play-day readout on Home has been since 2026-09-12. It
+   waited 350ms and then faded in over --dur-base, and a word that arrives
+   half a second after the pointer is one you stand and wait for (Adrian,
+   2026-09-14: "it shows up instantly when hovering, right now its such a
+   delay between hovering and when the hover text pops up"). */
+[data-tip]:hover::after {
+  opacity: 1;
+}
+
+/* =========================================================================
+   Drawer
+   ========================================================================= */
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  -webkit-app-region: no-drag;
+  z-index: var(--z-modal);
+  display: flex;
+  justify-content: flex-end;
+  background-color: var(--scrim);
+  /* As .scrim: the dim fades, the glass it carries does not. */
+  animation: scrim-in var(--dur-base) var(--ease-out);
+}
+
+/* The same glass a modal is made of, and blurred like one: it was --panel
+   with no backdrop-filter at all, which is a translucent slab rather than
+   glass — the page behind it came through sharp. */
+.drawer {
+  width: min(480px, 100%);
+  display: flex;
+  flex-direction: column;
+  background-color: var(--glass-deep);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-deep);
+  -webkit-backdrop-filter: var(--glass-blur-deep);
+  border-left: var(--edge) solid var(--outline);
+  box-shadow: var(--shadow-lg);
+  animation: drawer-in var(--dur-fast) var(--ease-out);
+}
+
+/* A real close: drawer.js waits for the panel's animationend before it
+   removes the node, so the slide-out is also what times the teardown. */
+.drawer-scrim.is-closing {
+  animation: fade-out var(--dur-base) var(--ease-out) forwards;
+  pointer-events: none;
+}
+
+.drawer-scrim.is-closing .drawer {
+  animation: drawer-out var(--dur-base) var(--ease-out) forwards;
+}
+
+.drawer__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border-bottom: var(--edge) solid var(--divider);
+}
+
+.drawer__title { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+.drawer__sub { margin-top: 3px; font-size: var(--text-md); color: var(--text-2); }
+
+.drawer__close {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+
+.drawer__close:hover { background: var(--hover); color: var(--text-1); }
+.drawer__close svg { width: 16px; height: 16px; }
+
+.drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Launch burst canvas — above the page, below dialogs, never interactive. */
+.burst {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: var(--z-overlay);
+  pointer-events: none;
+}
+
+/* The moment's words (2026-09-18): a capsule laid exactly over Play for the
+   moment's length, wearing the button's own tokens so it is the button — it
+   says "Launching…" from the press and "Have fun" at the pop, the two
+   crossfading with a small slide. Never interactive: the real Play is under
+   it, and a second press there starts the moment over. */
+.burst-words {
+  position: fixed;
+  z-index: var(--z-overlay);
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  border: var(--edge) solid var(--outline);
+  color: var(--on-launch);
+  background-color: var(--grad-from);
+  background-image: var(--sheen-launch), var(--gradient);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.70),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.12),
+    var(--shadow-accent);
+  font-size: 21px;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.burst-words > span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transition: opacity 320ms var(--ease-in-out), transform 320ms var(--ease-in-out);
+}
+
+.burst-words__b {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.burst-words.is-fun .burst-words__a {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.burst-words.is-fun .burst-words__b {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* =========================================================================
+   Depth — see the note on --shadow-sm in tokens.css.
+
+   Three heights, and nothing else. The page's containers are glass and sit
+   well clear of the world; the rows and cards inside them are opaque and sit
+   a step off their container; anything you can click rises the last pixel to
+   meet the cursor and drops flat when it is pressed. That last part is the
+   whole reason this section exists — a slab that never moves is furniture,
+   and a slab that answers is a control.
+   ========================================================================= */
+
+/* The slabs inside a container: lit, opaque, one step up. */
+.partner-row,
+.mod-card,
+.setting-row,
+.profile-card,
+.account-row,
+.add-account,
+.clip-card,
+.choice {
+  background-image: var(--sheen);
+}
+
+.mod-card,
+.setting-row,
+.profile-card,
+.account-row,
+.add-account,
+.clip-card {
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--dur-press-out) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
+}
+
+/* Hover lifts. One pixel — enough to read as an answer, not enough to shove
+   the row's neighbours around, and layout still never moves. Not the mod
+   card or the profile card: those zoom their picture instead (2026-09-14),
+   and only the fill answers on the slab itself. */
+.account-row:hover,
+.add-account:hover,
+.clip-card:hover {
+  transform: translateY(var(--lift));
+  box-shadow: var(--shadow-md);
+  background-image: var(--sheen-raised);
+}
+
+.partner-row:hover {
+  background-image: var(--sheen-raised);
+}
+
+/* Pressing puts the slab back down. These restate the dip from the press
+   block above, which would otherwise lose to the hover rules here — both
+   match while a slab is being clicked, and the later one wins. The mod and
+   profile cards are here for the dip alone. */
+.mod-card:active,
+.partner-row:active:not(:disabled),
+.profile-card:active,
+.account-row:active,
+.add-account:active,
+.clip-card:active {
+  transform: scale(var(--press-tile));
+  box-shadow: var(--shadow-sm);
+  transition-duration: var(--dur-press-in);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mod-card,
+  .setting-row,
+  .profile-card,
+  .account-row,
+  .add-account,
+  .clip-card {
+    transition: none;
+  }
+  .account-row:hover,
+  .add-account:hover,
+  .clip-card:hover {
+    transform: none;
+  }
+}
+
+/* =========================================================================
+   The launcher's own dropdown (2026-09-09) — ui/select.js
+   A native <select> opens a popup the page cannot paint, and over the glass
+   it was a white box with black rows. This is the field the <select> was,
+   opening the same glass menu the account chip and the profile picker use.
+   ========================================================================= */
+.select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: left;
+  background-image: none;
+  padding-right: var(--space-3);
+  cursor: pointer;
+}
+.select-btn__label { flex: 1 1 auto; min-width: 0; }
+.select-btn__caret { display: inline-flex; flex: none; color: var(--text-3); }
+.select-btn__caret svg { width: 14px; height: 14px; }
+.select-btn[aria-expanded="true"] { border-color: var(--accent); }
+
+/* ---- The version picker (2026-09-14) ------------------------------------
+   Lunar's version wall, on glass: one 3:4 poster of Mojang's own key art per
+   Minecraft family, five to a row, the version under each as a small
+   dropdown and the update's name under that, a Custom card that is a field,
+   and Done floating over the wall's corner — on nothing, so a row more is in
+   view. See ui/versionpicker.js. The editor's field wears the same poster,
+   small. */
+.version-btn { padding-left: 5px; }
+
+.version-btn__thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--surface-1);
+  color: var(--text-3);
+}
+
+.version-btn__thumb img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.version-btn__thumb svg { width: 14px; height: 14px; }
+
+/* At 1000 the ten cards are two rows of five that fit the window whole,
+   with Done in the clear under the last row — the renderer is always
+   1533x814 (it scales, never reflows), so this is measured, not hoped. The
+   body is the frame Done floats in. */
+.modal--wall { max-width: 1000px; }
+.modal--wall .modal__body { position: relative; }
+
+.vpick__wall {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-3);
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px 3px 64px; /* the pressed ring must not be clipped; the last row clears Done */
+  margin: -3px;
+}
+
+/* Done, over the wall's bottom-right corner — no footer band under it
+   (Adrian: "remove the background of the done button that spans across the
+   entire popup, just keep the done button on top of the cards"). */
+.vpick__done {
+  position: absolute;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 2;
+  box-shadow: var(--shadow-md);
+}
+
+/* The line for a version no jar covers (2026-09-16): the same glass capsule
+   as Done, in the opposite corner, said in the quiet weight — a fact, not a
+   button. Hidden whenever the choice is covered. */
+.vpick__note {
+  position: absolute;
+  left: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: var(--edge) solid var(--outline);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+  text-shadow: var(--plate-shadow);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  max-width: calc(100% - 180px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vpick-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The poster is a button. At rest it is only the picture; under the pointer
+   the picture zooms in a little, slowly (Adrian: "instead of making it pop
+   up when hovering, make the image of each card slightly and smoothly zoom
+   in, very smooth and slight slow"); it dips on the click like any button;
+   chosen, the accent ring. */
+.vpick-card__art {
+  position: relative;
+  display: block;
+  width: 100%;           /* the plain card has nothing in flow to size it */
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-1);
+  color: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition:
+    transform var(--dur-press-out) var(--ease-spring),
+    box-shadow var(--dur-base) var(--ease-in-out),
+    border-color var(--dur-base) var(--ease-in-out);
+}
+
+/* The picture keeps its own layer for good (will-change), so the zoom, the
+   press and the ring never re-draw it mid-motion, and the frame clips it as
+   one group — no corner or seam showing for a frame while the button dips
+   (Adrian: "when clicking / selecting a square, make sure the zoomed-in icon
+   doesn't glitch"). A poster is four times a mod icon, so it zooms less. */
+.vpick-card__art { isolation: isolate; }
+
+.vpick-card__art img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: transform var(--dur-zoom) var(--ease-out);
+  will-change: transform;
+}
+
+.vpick-card__art:hover { border-color: var(--border-strong); }
+.vpick-card__art:hover img { transform: scale(var(--zoom-poster)); }
+
+.vpick-card__art[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm);
+}
+
+/* Keyboard focus is a white ring, not the accent one: pressed and focused
+   are two different cards the moment the arrow keys move. */
+.vpick-card__art:focus-visible { outline: 2px solid var(--text-1); outline-offset: 3px; }
+
+/* The Custom card: a dashed frame with a pencil, and a field for a caption. */
+.vpick-card--custom .vpick-card__art { border-style: dashed; }
+
+.vpick-card__custom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--text-3);
+  transition: transform var(--dur-zoom) var(--ease-out);
+}
+
+.vpick-card__art:hover .vpick-card__custom { transform: scale(var(--zoom-poster)); }
+.vpick-card__custom-glyph { display: inline-flex; }
+.vpick-card__custom-glyph svg { width: 30px; height: 30px; }
+.vpick-card__custom-text { font-size: var(--text-xs); text-align: center; line-height: var(--leading-snug); }
+
+.vpick-card__input {
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.vpick-card.is-on .vpick-card__input { color: var(--accent); border-color: var(--accent); }
+
+.vpick-card__caption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+/* The version under the poster is a dropdown in the caption's own type —
+   the number bold, a caret after it — that takes a tint under the pointer. */
+.vpick-card__pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-1);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.vpick-card__pick:hover,
+.vpick-card__pick[aria-expanded="true"] { background: var(--surface-2); }
+
+.vpick-card__pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.vpick-card__caret { display: inline-flex; color: var(--text-3); }
+.vpick-card__caret svg { width: 13px; height: 13px; }
+
+.vpick-card.is-on .vpick-card__version { color: var(--accent); }
+
+.vpick-card__name {
+  padding: 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  max-width: 100%;
+}
+
+/* A long list scrolls inside the glass rather than growing past the window. */
+.menu--scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The row that is the current choice: a tint, and a check on the right. */
+.menu__item.is-active {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.menu__item .menu__check { margin-left: auto; display: inline-flex; flex: none; }
+.menu__item .menu__check svg { color: var(--accent); }
+.menu__item:disabled { opacity: 0.45; cursor: default; }
+
+/* =========================================================================
+   Import profiles (2026-09-16) — the panel behind the button on Profiles.
+   A group here is a tint on the modal's glass, never a second sheet of it;
+   the rows are the Settings rows, the switches the Settings switches. Three
+   ghost rows hold the panel's height while the launchers are looked for.
+   ========================================================================= */
+.modal--importer { max-width: 620px; }
+
+.importer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 220px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.importer__group {
+  background-color: var(--surface-1);
+  background-image: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  border: var(--edge) solid var(--outline);
+  border-radius: var(--radius-lg);
+}
+
+.importer__group .group__title { font-size: var(--text-md); color: var(--text-2); }
+.importer__row { background-color: var(--surface-2); }
+.importer__row + .importer__row { margin-top: var(--space-2); }
+.importer__why { color: var(--text-2); }
+.importer__ghost { color: transparent; background: var(--surface-3); border-radius: var(--radius-sm); }
+.importer__row--ghost .setting-row__name { width: 140px; }
+.importer__row--ghost .setting-row__desc { width: 200px; }
+.importer__none { color: var(--text-2); font-size: var(--text-md); padding: var(--space-3); }
+.importer__sum { font-size: var(--text-sm); color: var(--text-3); align-self: center; }
+
+/* =========================================================================
+   We found your profiles (2026-09-18, ui/found.js)
+   The first opening of Profiles, when the other launchers on this PC hold
+   something: one row per launcher — its logo, its name, what it holds — in the
+   Import panel's own row recipe, on a spotlight dialog (modal.js). The logos
+   are the launchers' own marks (assets/art/launchers/), each on a tile of the
+   tint every row wears; Lunar's is a white mark and sits on the darker tint.
+   ========================================================================= */
+.found { display: flex; flex-direction: column; gap: var(--space-3); }
+.found__rows { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.found__row {
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+}
+
+.found__row .setting-row__text { gap: 2px; }
+
+.found__logo {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-2);
+  box-shadow: var(--rim);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--text-2);
+}
+
+.found__logo img {
+  width: 30px;
+  height: 30px;
+  display: block;
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+
+.found__logo svg { width: 22px; height: 22px; }
+.found__logo--lunar { background-color: var(--surface-inset); }
+.found__logo--lunar img { width: 28px; height: 28px; }
+
+/* The same tile at a group's head on the Import panel. */
+.found__logo--sm { width: 28px; height: 28px; border-radius: var(--radius-xs); }
+.found__logo--sm img { width: 20px; height: 20px; }
+.found__logo--sm.found__logo--lunar img { width: 19px; height: 19px; }
+.found__logo--sm svg { width: 15px; height: 15px; }
+.importer__head { display: flex; align-items: center; gap: var(--space-2); }
+
+.found__note {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  line-height: var(--leading-normal);
+}

@@ -1,0 +1,4040 @@
+/* =========================================================================
+   BlueClient — page layouts
+   Vanilla Minecraft, enhanced: one centred column per page, opaque slabs
+   with hard edges, and the primary action at the top right of the column.
+   Home is the exception — the title screen, no slabs at all.
+   ========================================================================= */
+
+/* =========================================================================
+   Shared: tags, pills, links
+   ========================================================================= */
+.tag {
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 var(--space-3);
+  background-color: var(--panel-quiet);
+  border: 1px solid var(--outline);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  /* One colour for every tag (2026-09-07). They were cyan for the version,
+     the loader's own hue, amber for Java and cyan-on-white for memory —
+     four hues for four facts of equal weight, on a card the size of a
+     business card, with the amber one reading as a warning about something
+     that is not a problem. The value reads bright, the glyph beside it stays
+     quiet, and the row reads as a set. The tag-* tokens stay in tokens.css:
+     they are how a variant would tell them apart again if a reason appears. */
+  color: var(--text-1);
+}
+
+.tag svg { width: 14px; height: 14px; color: var(--text-3); }
+
+.pill {
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--outline);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.pill--online { background: var(--success-quiet); color: var(--success); }
+
+.link-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text-2);
+}
+
+.link-btn:hover { color: var(--accent); }
+
+/* =========================================================================
+   HOME — Just play (2026-09-02)
+   The world is the screen. The player stands on the panorama under a
+   nameplate, Play and the profile row stack beneath, and one quiet line
+   remembers what was played last. No slabs, nothing else.
+   ========================================================================= */
+.page--home {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Home never scrolls, so it gives back the scrollbar gutter every other page
+     reserves — with it the side inset is exactly the 56px padding, which is
+     what the column widths below are measured against. */
+  scrollbar-gutter: auto;
+  /* The side inset is what every gap on this page is measured against, so
+     widening it is how the slab is narrowed without the three gaps drifting
+     apart (2026-09-02: 56 left the slab too wide). */
+  padding: var(--space-5) var(--space-10) var(--space-8);
+  /* Home is a fixed composition, not a stretch (see --home-h below). Anything
+     the window has spare goes half above the block and half below, so it sits
+     in the middle of the world rather than being pulled apart by it. */
+  justify-content: center;
+}
+
+/* Two columns, and the pair is one object (2026-09-08, Adrian: "if you view it
+   as an entire group, it is more to the right rather than centered"). The two
+   columns are the same width and that width is Play's — 480px each, 81px
+   apart, 1041px of composition the page centres whole. The slab was 452 until
+   2026-09-09 ("make the cards slightly wider so its the same width as play
+   button"), which left Play's right edge and the slab's left edge on lines
+   28px apart and stopped the pair reading as one object.
+
+   It used to be a 1fr column against a fixed slab, which centred the *box* and
+   left the group 69px right of centre: the left column carried 138px of empty
+   air beside Play that the right column had no answer to, and the block's own
+   1232px ceiling pinned that air to the inside edge rather than the window's.
+
+   That air is also where the 162px between Play and the slab came from. The
+   gap is now the whole distance between the two, set outright at half of what
+   it measured (2026-09-08, "approximately 50% smaller"): at 81px the two
+   halves of Home read as one screen, at 162 as two.
+
+   --home-floor is the band both columns stop short of, so the profile row and
+   the slab end on the same line. */
+.home {
+  --home-floor: calc(var(--space-9) + var(--space-2));
+  /* Three columns since 2026-09-21 (Home, Six Ways — "Build C"): a column
+     of cards, the player, a column of cards. The body takes the bar's own
+     shape — left, centre, right — which is what the two-column pair never
+     did: the bar spanned the window and the pair sat 1041px wide in the
+     middle of it, a third of the width bare wallpaper each side (Adrian:
+     "it feels a bit empty almost"). --home-play is the launch stack's width
+     — the stack is the whole of the middle column and .launch-stack reads
+     it back off this token; --home-side is a side column. 380 + 62 + 480 +
+     62 + 380 = 1364 of the 1389 the page has inside its padding. */
+  --home-play: 480px;
+  --home-side: 380px;
+  --home-gap: 62px;
+  /* The cards start a little under the bar's line (2026-09-21, Adrian:
+     "a sliiightly larger gap between the top bar and the cards below … not
+     too much just slightly") — the two side columns are pushed down by
+     this, the player's block is not, and the columns still end on the
+     floor: the list cards give the height up. */
+  --home-drop: 12px;
+  /* The height the whole composition is drawn at, and the reason none of it
+     moves when the window does (2026-09-04, Adrian: "I want it to look like
+     this all the time in the layouts and the metrics. But it changes in the
+     layout when I change fullscreen").
+
+     Every metric on Home is a share of this one number — the stage the player
+     is fitted to, the gap between his shins and Play, and the five partner
+     rows, which each take an equal cut of whatever is left of the slab. Let it
+     follow the window instead and all three drift at once: at 1920x1080 the
+     stage stayed on its 440 ceiling while the column under it kept growing, so
+     the player floated at the top of the screen with a 299px hole between his
+     feet and the button, and the rows swelled from 110px to 157. 717 is the
+     height the block has in the window Adrian works in, which is the
+     arrangement he photographed. Past that it stops growing and centres, the
+     way the block already stopped widening with the window.
+
+     It still shrinks below 717 — a short window has to give somewhere, and a
+     squeezed Home reads better than a clipped one. */
+  --home-h: 717px;
+  flex: 0 1 auto;
+  height: var(--home-h);
+  max-height: 100%;
+  min-height: 0;
+  /* The grid claims the full width and centres its tracks inside it, so the
+     spare width of a wide window is split evenly outside the composition
+     rather than handed to one column. The block does not widen with the window
+     at all now — both tracks are fixed — which is what the old 1232px
+     ceiling was reaching for. */
+  align-self: stretch;
+  width: 100%;
+  display: grid;
+  /* Fractions in the columns' own proportions under a ceiling of their sum:
+     at the design size the tracks are exactly 380 / 480 / 380, and under the
+     0.72 zoom floor — where the page is genuinely short of room — the three
+     narrow together in proportion rather than the middle one first. */
+  grid-template-columns: minmax(0, 380fr) minmax(0, 480fr) minmax(0, 380fr);
+  max-width: calc(var(--home-side) * 2 + var(--home-play) + var(--home-gap) * 2);
+  margin-inline: auto;
+  justify-content: center;
+  gap: var(--home-gap);
+}
+
+/* The player's block to one side (the Layout button): the wide track moves
+   with him, and the three columns are placed by order — the first card
+   column, the player, the second card column, never by moving a node. */
+.home__side--first { order: 0; }
+.home__centre { order: 1; }
+.home__side--second { order: 2; }
+
+.home--skin-left { grid-template-columns: minmax(0, 480fr) minmax(0, 380fr) minmax(0, 380fr); }
+.home--skin-left .home__centre { order: 0; }
+.home--skin-left .home__side--first { order: 1; }
+
+.home--skin-right { grid-template-columns: minmax(0, 380fr) minmax(0, 380fr) minmax(0, 480fr); }
+.home--skin-right .home__side--second { order: 1; }
+.home--skin-right .home__centre { order: 2; }
+
+/* Narrower than the composition needs (480 + 81 + 480 inside the page's 72px
+   of side padding), and the air between the columns is what gives first —
+   hold the gap at 81 and the shortfall comes out of the columns instead. Below
+   this the two are as close as the grid gap, which is where they stood before
+   2026-09-08 anyway; below 1128 they start narrowing, together and equally. */
+@media (max-width: 1184px) {
+  .home { --home-gap: var(--space-6); }
+}
+
+/* A narrow window keeps the player and drops the cards. */
+@media (max-width: 900px) {
+  .home { grid-template-columns: minmax(0, 1fr); }
+  .home__side { display: none; }
+}
+
+.home__centre {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-5);
+  /* The same band the slab leaves below itself, so the profile row's bottom
+     edge and the slab's bottom edge land on one line. The "last played" line
+     sits inside the band rather than under the stack, so its height cannot
+     push that alignment out. */
+  padding-bottom: var(--home-floor);
+  /* And the same air under the bar the two card columns have (--home-drop),
+     so Layout, the nameplate and Skins stand on the cards' top line rather
+     than 12px above it (2026-09-21, evening; Adrian: "they should all move
+     down or skin get smaller so that they are in height with the 2 cards").
+     The stage gives the 12px up — the model is fitted to it — and the
+     stack stays on the floor. */
+  padding-top: var(--home-drop);
+}
+
+/* The Background capsule, in the bottom-right corner on the version line's
+   own level (2026-09-21, evening; Adrian: "move the 'background' button
+   from the bottom left, to the bottom right, so its parallel with the
+   blueclient version text, but on the right side" — it stood over the
+   version line in the left corner for the afternoon): the same glass as
+   Layout and Skins, one size smaller — it is a door to a setting, not a
+   control on the player. The version line is 16px tall on its 16px band,
+   so its middle is 24 up; the 30px capsule's is put on the same line.
+   Layout mode's press-on-the-world does not count it (it is a button, and
+   a press on it opens the panel over the mode, whose Escape then belongs
+   to the panel). */
+.background-open {
+  position: absolute;
+  right: var(--space-6);
+  bottom: calc(var(--space-4) + 8px - 15px);
+  z-index: 2;
+  border-radius: var(--radius-pill);
+  height: 30px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--edge) solid var(--outline);
+  text-shadow: var(--plate-shadow);
+}
+
+.background-open:hover:not(:disabled) { background-color: var(--glass-quiet-hover); color: var(--text-1); }
+.background-open svg { width: 14px; height: 14px; }
+
+/* The version in the corner, where the title screen puts it. The line is a
+   set 16px so the Background capsule in the other corner can sit on its
+   level (above). */
+.home__version {
+  position: absolute;
+  left: var(--space-6);
+  bottom: var(--space-4);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  line-height: 16px;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  text-shadow: var(--plate-shadow);
+}
+
+.home__version-sep { color: var(--text-2); }
+
+/* The update line is replaced in place whenever main says the update moved on
+   — nothing, downloading, ready — so it hangs in a slot of its own rather than
+   being appended to the corner. `display: contents` keeps the separator and
+   the line as items of the version row itself, so they take the row's gap and
+   baseline exactly as they did when they were appended directly. */
+.home__update-slot { display: contents; }
+
+/* The one place on Home that mentions an update. It is a link in weight — no
+   slab, no bevel — because a button here would compete with Play, and the
+   accent is what tells you it is pressable at all. */
+.home__update {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-shadow: var(--plate-shadow);
+  cursor: pointer;
+}
+
+.home__update:hover { text-decoration: underline; }
+
+/* The same line while there is nothing to press — the percentage of a download
+   the player never asked for and does not have to wait on. It gives up the
+   accent and the pointer with the press: on this corner the accent is the
+   whole signal that something is pressable. */
+.home__update--note {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.home__update--note:hover { text-decoration: none; }
+
+.home__update:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Player: nameplate and model --------------------------------------- */
+.player {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  /* The model is drawn taller than its stage so the legs run under the Play
+     button. Clip it at the stage edge, which sits inside the button, or the
+     shins reappear in the gap between Play and the profile row. */
+  overflow: hidden;
+}
+
+/* The flat dark plate over the head, the way the game names a player. */
+.nameplate {
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 320px;
+  padding: 4px 10px;
+  background: var(--nameplate);
+  color: var(--on-plate);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.nameplate__dot {
+  border-radius: var(--radius-pill);
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--success);
+}
+
+/* The stage takes whatever height is left between the bar and the stack;
+   the model scales to it. Only the window decides that height: the running
+   rows are out of the flow (below), so a launch never pushes down on the
+   player and he stays one size however many games are up — the rows cover
+   more of him instead, which is the same thing Play already does to his
+   shins (Adrian, 2026-09-02: "the skin gets smaller every time you launch").
+   The 220px floor is the safety net for a short window. */
+.player .mc-stage {
+  flex: 1 1 auto;
+  min-height: 240px;
+  max-height: 486px;
+  width: 404px;
+  max-width: 100%;
+}
+
+/* ---- Launch stack: Play, then the profile row ---------------------------
+   The stack rides up over the model's shins (2026-09-02): it cancels the
+   column gap and takes a little more, so Play stands in front of the player
+   the way a title-screen button stands in front of the world. */
+.launch-stack {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* The stack IS the left column (see .home), so it takes the column's width
+     up to --home-play rather than holding 480px and overflowing: below the
+     width the composition wants, a fixed stack spilled out of its track and
+     crossed the slab — at the 1000px minimum window the two overlapped by
+     26px. Narrower Play, in its own lane, reads better than a wide one over
+     the panels. */
+  width: 100%;
+  max-width: var(--home-play);
+  flex: none;
+  margin-top: calc(var(--space-5) * -1 - 44px);
+}
+
+/* Play. It keeps its footprint whatever is running above it. */
+.launch-row {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+/* ---- The launch moment --------------------------------------------------
+   Pressing Play is the one action in the launcher worth a moment of its own,
+   and it gets three beats that all finish inside half a second: the button
+   takes the hit, the new row is driven out of its top edge, and the seam
+   between them throws off a handful of the profile block's own pixels.
+
+   It is deliberately button-sized rather than screen-sized. A launcher is
+   opened ten times a day, and anything that covers the screen is a delight
+   three times and a toll thereafter — and with several games able to start
+   at once, a takeover has nothing coherent to say when Play is pressed
+   twice. Nothing here delays the launch: the work has already begun by the
+   time the first frame draws. */
+.launch.is-struck {
+  transform-origin: bottom center;
+  animation: launch-struck var(--dur-launch-kick) var(--ease-out);
+}
+
+@keyframes launch-struck {
+  from { transform: translateY(3px) scaleY(0.965); }
+  to { transform: none; }
+}
+
+/* The launch moment is a full-window canvas since 2026-09-09 (ui/burst.js);
+   the .launch-burst layer that threw pixels off this seam went with it. */
+
+.launch {
+  border-radius: var(--radius-pill);
+  position: relative;
+  width: 100%;
+  height: 60px;
+  padding: 0 var(--space-6);
+  border: var(--edge) solid var(--outline);
+  color: var(--on-launch);
+  overflow: hidden;
+  isolation: isolate;
+  background-color: var(--grad-from);
+  background-image: var(--gradient);
+  box-shadow: inset 0 1px 0 0 var(--spec),
+    var(--shadow-accent);
+}
+
+.launch:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+  background-image: var(--gradient-hover);
+}
+
+.launch:active:not(:disabled) {
+  background-color: var(--accent-press);
+  background-image: var(--gradient-press);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+/* The progress sweep moved off this button on 2026-09-02: several launches can
+   be installing at once, so each one fills its own row above instead. */
+
+.launch__content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: 100%;
+}
+
+.launch__icon { width: 23px; height: 23px; flex: none; }
+
+.launch__text {
+  font-size: 21px;
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Running games ------------------------------------------------------
+   One row per game (2026-09-02), stacked above Play with the newest nearest
+   the button, so the row for the launch just started appears where the eye
+   already is. They grow upward over the player; the profile row below keeps
+   its line on --home-floor whatever is running.
+
+   A row is the profile row's slab at the same height, so the stack reads as
+   one column of vanilla buttons rather than a panel bolted on top.
+
+   The list hangs off the top of the stack rather than sitting in it: out of
+   the flow, so rows take height from nothing — the player behind them keeps
+   his size and they cover more of him (2026-09-02, "the skin gets smaller
+   every time you launch"). Anchored by its bottom edge, so it still grows
+   upward. */
+.sessions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.session {
+  border-radius: var(--radius-lg);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: 40px;
+  padding: 0 4px 0 var(--space-4);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+
+/* The same sweep Play used to fill with, now carried by the row that is
+   actually installing — several can be filling at once. */
+.session__fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--sweep);
+  transform: translateX(-100%);
+}
+
+/* Driven out of Play's top edge. The stack is anchored at the bottom, so a
+   row growing from no height at all pushes its own top edge upward and the
+   content rises out of the button — the shove, done by layout rather than
+   by a slide over the top of it. */
+.session.is-entering {
+  animation: session-enter var(--dur-row-enter) var(--ease-out);
+}
+
+@keyframes session-enter {
+  from { height: 0; opacity: 0; }
+  55% { opacity: 1; }
+  to { height: 40px; opacity: 1; }
+}
+
+/* The payoff. Minecraft takes ten to thirty seconds to actually appear, and
+   that is the uncertain moment — the press is not. When the game window
+   opens, the accent wipes across the row once and clears off the right, and
+   the row settles into its clock. The block is filled with the brand gradient
+   but its leading edge is still a clip path and not a fade — the wipe has to
+   be cut like everything else. */
+.session::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--grad-from);
+  background-image: var(--gradient);
+  clip-path: inset(0 100% 0 0);
+  pointer-events: none;
+}
+
+.session.is-live::before {
+  animation: session-live var(--dur-live-flash) var(--ease-glide);
+}
+
+@keyframes session-live {
+  from { clip-path: inset(0 100% 0 0); }
+  45% { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(0 0 0 100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launch.is-struck,
+  .session.is-entering,
+  .session.is-live::before { animation: none; }
+}
+
+.session__face {
+  border-radius: var(--radius-xs);
+  width: 16px;
+  height: 16px;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.session__name {
+  min-width: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+}
+
+/* Who it signed in as, or the stage it is on. Takes the slack, so the name
+   truncates last and the clock never moves. */
+.session__meta {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.session__time {
+  flex: none;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+
+.session__stop {
+  border-radius: var(--radius-pill);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--text-3);
+}
+
+.session__stop:hover { background: var(--danger-quiet); color: var(--danger); }
+.session__stop svg { width: 14px; height: 14px; }
+
+/* ---- A row that crashed (2026-09-11) --------------------------------------
+   The game died, and the row stays where it was and says why: the same first
+   line — face, name, who it ran as, the clock stopped where the game stopped
+   — then the reason, the line under it, and the actions that follow from it.
+   It is the running row grown taller, not a new panel: everything inside is a
+   tint on the row's own glass, and the buttons are the tiers every other
+   button here uses (Retry cyan, Remove red, the rest grey). The player takes
+   it down with the same X. */
+.session[data-state="crashed"] {
+  height: auto;
+  flex-wrap: wrap;
+  row-gap: var(--space-2);
+  padding: var(--space-2) 4px var(--space-3) var(--space-4);
+}
+
+/* The clock stopped: the figure stays, the ink goes quiet. */
+.session[data-state="crashed"] .session__time { color: var(--text-3); }
+
+/* The block under the first line, full width of the row. */
+.session__crash {
+  flex: 1 0 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Under the face, in line with the name. */
+  padding-right: var(--space-2);
+}
+
+.session__reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* The one red thing on the row — a dot, the same size the partner rows use
+   for "up", the colour the launcher already uses for danger. */
+.session__dot {
+  border-radius: var(--radius-pill);
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--danger);
+}
+
+.session__headline {
+  min-width: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+}
+
+.session__detail {
+  display: block;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  line-height: var(--leading-snug);
+}
+
+.session__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-top: 2px;
+}
+
+/* The profile row: the wide button opens Profiles, the caret switches in
+   place. Two vanilla slab buttons side by side. */
+.launch-stack__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.profile-pick,
+.profile-pick__caret {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  /* Taller than Play is short (2026-09-08, Adrian: "make the profile selection
+     slightly larger in height too") — 40 for four months, and at a 480px Play
+     the row under it was reading as a strip rather than as a button. */
+  height: 48px;
+  box-shadow: inset 0 1px 0 0 var(--spec);
+  color: var(--text-1);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--edge) solid var(--outline);
+}
+
+.profile-pick {
+  border-radius: var(--radius-pill); flex: 1; min-width: 0; padding: 0 var(--space-4); }
+.profile-pick__caret { border-radius: var(--radius-pill); width: 48px; flex: none; color: var(--text-2); }
+.profile-pick__caret svg { width: 16px; height: 16px; }
+
+.profile-pick:hover,
+.profile-pick__caret:hover { background-color: var(--glass-quiet-hover); }
+
+.profile-pick:active,
+.profile-pick__caret:active {
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+.profile-pick__face {
+  border-radius: var(--radius-xs);
+  width: 16px;
+  height: 16px;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+/* ---- The line under the stack ------------------------------------------ */
+.home__recent {
+  border-radius: var(--radius-pill);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-shadow: var(--plate-shadow);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--edge) solid var(--outline);
+}
+
+.home__recent svg { width: 14px; height: 14px; }
+
+/* Continue (2026-09-07) — the same slot, now a control. Quiet on purpose: a
+   rank under the profile row above it and two under Play, because it is a
+   shortcut and the road in has to stay the loudest thing on the screen. It
+   carries its own slab, so it drops the text shadow the bare line needs to
+   sit straight on the world. */
+.home__continue {
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  height: 32px;
+  padding: 0 var(--space-3);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  border: var(--edge) solid var(--outline);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-shadow: none;
+}
+
+.home__continue:hover {
+  background-color: var(--glass-hover);
+  color: var(--text-1);
+}
+
+.home__continue svg { width: 14px; height: 14px; }
+
+/* The address is the one word here worth reading, so it takes the bright ink
+   and it is the part allowed to run out of room. */
+.home__continue__where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  font-weight: var(--weight-semibold);
+}
+
+.home__continue__when { flex: none; color: var(--text-3); }
+
+/* =========================================================================
+   PARTNER SERVERS — one opaque slab on the right of Home
+   ========================================================================= */
+.partners {
+  border-radius: var(--radius-2xl);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Content-sized (2026-09-08). It used to take whatever the two ledger
+     panels left, which made it the tallest thing in the column; with three
+     partners it is as tall as three rows and the slack goes to Your play. */
+  flex: 0 0 auto;
+  padding: var(--space-4);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  border: var(--panel-ring);
+  box-shadow: var(--shadow-lg);
+  /* The slab measures itself, so a narrow column can shed detail below. */
+  container: partners / inline-size;
+}
+
+.partners__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-1) var(--space-3);
+}
+
+.partners__title { font-size: var(--text-lg); font-weight: var(--weight-bold); white-space: nowrap; }
+.partners__note { font-size: var(--text-sm); color: var(--text-3); white-space: nowrap; }
+
+.partners__list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+}
+
+/* Each row takes an equal share of whatever height the slab has, so the rows
+   always run to its bottom edge. Which rows, and how many, is partners.js's
+   (the admin site's list since 2026-09-11, its first three). */
+.partner-row {
+  border-radius: var(--radius-md);
+  flex: 1 1 0;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  /* A raised slab, not a flat strip (2026-09-02): the same fill, the same
+     2px outline and the same bevel as Play and the profile row, so a server
+     you can join looks as pressable as the button that starts the game.
+     The bevel itself is added by the shared rule in components.css. */
+  background-color: var(--surface-2);
+  border: var(--edge) solid var(--outline);
+  text-align: left;
+}
+
+/* As .btn — the resting --surface-2 to --surface-3 was a two-point step, and
+   a server row you can join has to feel pressable. */
+.partner-row:hover { background-color: var(--panel-hover); }
+
+/* Pressing flips the bevel — the slab goes in, not down. */
+.partner-row:active {
+  box-shadow: inset 0 1px 0 0 var(--spec);
+}
+
+/* The podium is gone (2026-09-07), and the reason is the numbers on the rows
+   beside it. Gold, silver and bronze — with #1, #2, #3 on the logos — is a
+   ranking claim, and the list disproved it in the same glance: gold #1 BlueMC
+   read 185 players, silver #2 Hypixel read 18,134. A medal that the row under
+   it contradicts teaches a player that nothing on the screen is measured,
+   which is exactly the opposite of the rule that put live pings here in the
+   first place. The order is still the launcher's own — that is what a partner
+   list is — and the first row now says so in a word instead of dressing it as a
+   podium finish: see .partner-row__featured. Nothing else about the row changed.
+
+   The --gold / --silver / --bronze tokens stay in tokens.css, unused, in case
+   a genuinely ranked list ever wants them. */
+
+.partner-row__logo-wrap { position: relative; flex: none; }
+
+.partner-row__logo {
+  border-radius: var(--radius-sm);
+  width: 40px;
+  height: 40px;
+  display: block;
+  object-fit: cover;
+  border: 1px solid var(--outline);
+}
+
+/* The first row wore a "Featured" pill (.partner-row__featured) from 2026-09-07
+   until the panel itself was renamed Featured servers on 2026-09-09. */
+
+.partner-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.partner-row__title { display: flex; align-items: center; gap: var(--space-2); }
+
+.partner-row__name {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--text-1);
+}
+
+.partner-row__dot {
+  border-radius: var(--radius-pill);
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--success);
+}
+
+.partner-row__dot.is-off { background: var(--text-3); }
+.partner-row__address { font-size: var(--text-sm); color: var(--text-3); }
+
+.partner-row__count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--text-2);
+}
+
+.partner-row__count svg { width: 15px; height: 15px; }
+
+.partner-row__players {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.partner-row__capacity { color: var(--text-3); font-weight: var(--weight-medium); }
+
+/* A narrow slab sheds the capacity half of the count, so the server's name
+   never gives way to a number. */
+@container partners (max-width: 300px) {
+  .partner-row__capacity { display: none; }
+}
+
+/* =========================================================================
+   PROFILES
+   ========================================================================= */
+/* The presets fill the left in pairs; whichever one is picked opens on the
+   right. The page runs wider than the standard column so both halves get
+   room. */
+.page--profiles .page__inner { max-width: 1280px; }
+
+/* Two fifths for the profiles, three for the editor (2026-09-17, "Wide" off
+   the eight-frame sheet). The two halves were equal from 2026-09-09, so the
+   gap sat on the window's centre line (Adrian then: "the gap between the
+   profile and the settings card is right in the middle of the screen") —
+   and with two 116px cards beside a 581px editor the left half was mostly
+   air. The editor lays its fields in two columns now and is 420px tall, the
+   cards are one column of rows, and the two sides end near one line; the
+   balance is what the split serves. Under 900 the columns stack. */
+.profiles {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .profiles { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* One column of rows, 10px apart. Two-up cards were the shape from 2026-09-07
+   to 2026-09-17. */
+.profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  align-content: start;
+}
+
+/* A card is a row (2026-09-17): the block, the name over "version · loader",
+   then the Java and memory line and the tick at the right — 68px tall. It was
+   a 116px stack with the line at its foot until then. */
+.profile-card {
+  border-radius: var(--radius-xl);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  overflow: hidden;
+  text-align: left;
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+
+.profile-card:hover { background-color: var(--glass-hover); }
+
+/* Selected = the one the editor is showing. Active = the one that launches. */
+/* One mark each. The card the editor shows wears the accent on its own
+   hairline — a ring just inside it and a faint halo outside, so it reads as
+   lit rather than outlined — and says its name in cyan; the one that launches
+   carries a bare cyan tick. Until 2026-09-15 it was a flat 3px bar across the
+   top and a solid cyan badge (Adrian, from the six mockups: the "Tightened"
+   border, everything else on the card from "Quiet"). The bar was the one flat
+   stripe left on a glass surface. */
+/* Glass one step up, not a tint: `--panel-raised` swapped the card's dark
+   floor for a white wash and the selected card read as the one bright thing
+   in the grid (Adrian, 2026-09-09: "too light"). */
+.profile-card.is-selected,
+.profile-card.is-selected:hover {
+  background-color: var(--glass-hover);
+  border-color: var(--pick-rim);
+  box-shadow: inset 0 0 0 1px var(--pick-ring), 0 0 0 4px var(--pick-halo);
+}
+
+.profile-card.is-selected .profile-card__name { color: var(--accent); }
+
+/* The block and the two lines of text take the row's give; the line and the
+   tick after them sit at the right. */
+.profile-card__top { display: flex; align-items: center; gap: var(--space-3); flex: 1 1 auto; min-width: 0; }
+
+/* The block zooms a little, slowly, under the pointer — the card's hover
+   motion, in place of the lift the other slabs get (2026-09-14). */
+.profile-card__face {
+  border-radius: var(--radius-sm);
+  width: 44px;
+  height: 44px;
+  flex: none;
+  image-rendering: auto;
+  transition: transform var(--dur-zoom) var(--ease-out);
+  will-change: transform; /* its own layer, so the click never re-draws it */
+}
+
+.profile-card:hover .profile-card__face { transform: scale(var(--zoom)); }
+
+.profile-card__name { font-size: var(--text-lg); font-weight: var(--weight-bold); }
+.profile-card__meta { font-size: var(--text-xs); color: var(--text-3); }
+
+.profile-card__check {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.profile-card__check svg { width: 16px; height: 16px; }
+
+/* Java and memory, the two facts the card does not say anywhere else, as one
+   quiet line (2026-09-15). They were two chips (`specTags`, still what Home
+   draws) — a second dark floor each, on a card the size of a business card. */
+.profile-card__line {
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.profile-card__line span + span::before { content: "·"; margin: 0 6px; }
+
+/* ---- Editor: the panel beside the grid ---------------------------------- */
+/* It has to fit the window without scrolling (Adrian, 2026-09-09). Since
+   2026-09-17 its fields sit in two columns — Name | Icon, Version | Loader,
+   Memory | Content — with the head and the foot across both, which is what
+   brought it from 581px to about 420 at the launcher's own 1533x814 (the
+   journal has the measurement). Anything added to it pays for its height. */
+.profile-editor {
+  border-radius: var(--radius-2xl);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: start;
+  gap: 10px 12px;
+  padding: var(--space-5);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--panel-ring);
+}
+
+.profile-editor__head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--edge) solid var(--divider);
+}
+
+.profile-editor__face {
+  border-radius: var(--radius-md);
+  width: 44px;
+  height: 44px;
+  flex: none;
+  image-rendering: auto;
+}
+
+.profile-editor__title { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+.profile-editor__meta { font-size: var(--text-md); color: var(--text-3); }
+
+/* Every field is one tinted block on the glass (2026-09-15, the "Quiet"
+   frame — Adrian: almost the whole panel from it): its name small and grey
+   along the top, its value or control under that, and no label standing
+   loose between blocks. The corners nest — panel 26, padding 12, block 14.
+   The name has no edge of its own any more, so its block takes the accent on
+   its rim while it is being typed in. */
+.profile-editor .field {
+  gap: 0;
+  justify-content: center;
+  min-height: 62px;
+  padding: var(--space-2) 14px;
+  border-radius: var(--radius-md);
+  background-color: var(--surface-1);
+  border: var(--edge) solid var(--divider);
+}
+
+/* Only while the NAME is being typed in: a swatch or a button that was just
+   clicked also holds focus, and lighting its whole block for that read as a
+   second selection. */
+.profile-editor .field:has(> .profile-editor__name:focus) { border-color: var(--accent); }
+
+.profile-editor .field__label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-3);
+}
+
+.profile-editor .field__hint {
+  font-size: var(--text-xs);
+  margin-top: var(--space-2);
+}
+
+/* The name is the block's value line: bare text, no well. */
+.profile-editor__name,
+.profile-editor__name:hover,
+.profile-editor__name:focus {
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+}
+
+/* The two controls that keep their own shape inside a block — the version
+   box, the "Grouped" frame's sunken well with the poster at its left, and the
+   loader switch beside it, on a darker track than it wears elsewhere so it
+   sits into the block the way the well does. Both 36px, both 6px under their
+   names, and nothing under either (the hints came off on 2026-09-15 — Adrian:
+   "remove the small text under the selection … they should both be aligned
+   together in height"; the version box says its line on hover instead), so
+   the two blocks are one height and the pair lines up. */
+.profile-editor .field > .select,
+.profile-editor .field > .segmented { margin-top: 6px; }
+
+.profile-editor .segmented--tint {
+  background-color: var(--surface-inset);
+  border-color: var(--divider);
+}
+
+/* The blocks a profile can wear: one row of eight, each one the block itself
+   with nothing drawn around it — the ones not chosen sit dimmed, the chosen
+   one is bright with a short cyan line under it (2026-09-15; they were 44px
+   tiles in dark wells with a cyan ring on the pick).
+
+   The line travels (the same evening; Adrian: "make it slide, just like when
+   you switch pages in the top bar … and so you can drag to slide too"): the
+   row is a `tabStrip` like the masthead's, so the line is the strip's
+   `.nav-slide` — a transparent slot the width of a swatch that glides on the
+   masthead's own transition, with the 16x3 line drawn under it — and a
+   press-and-drag along the row carries it, choosing each block as it passes.
+   The slot is transparent because the mark here is the line, not a tint;
+   `::after` is free on the slot (the tooltip's `::after` is the swatch's). */
+.profile-editor__icon { padding: 10px 14px; }
+
+.block-picker {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  touch-action: none;
+  user-select: none;
+}
+
+.block-picker .nav-slide {
+  top: 0;
+  bottom: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.block-picker .nav-slide::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 16px;
+  height: 3px;
+  margin-left: -8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.block-swatch {
+  border-radius: var(--radius-xs);
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
+  background: none;
+  border: 0;
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.block-swatch img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+  /* The picture must not be draggable as a picture, or the strip's drag is
+     cancelled the moment it starts (with draggable=false on the element too). */
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.block-swatch { -webkit-user-drag: none; }
+
+.block-swatch:hover { opacity: 0.85; }
+
+.block-swatch.is-selected { opacity: 1; }
+
+/* Memory: the name and, under it, what the profile gets — "8.0 GB" while the
+   override is on, "Off · follows the global 8.0 GB" while it is not — with
+   the switch at the right and a thin slider under the pair. The value line
+   is the old hint folded in. */
+.profile-editor__mem { display: flex; align-items: center; gap: var(--space-3); }
+
+.profile-editor__memval {
+  font-size: 14px;
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-editor .slider { height: 16px; margin-top: 6px; }
+
+.profile-editor .slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border: 0;
+  background: linear-gradient(
+    to right,
+    var(--grad-from) 0%,
+    var(--grad-to) var(--fill, 50%),
+    var(--surface-2) var(--fill, 50%),
+    var(--surface-2) 100%
+  );
+}
+
+.profile-editor .slider::-webkit-slider-thumb,
+.profile-editor .slider:hover::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  background-color: var(--knob);
+  border: 0;
+  box-shadow: var(--knob-shadow);
+}
+
+/* Content keeps the "Grouped" frame's pair of full-width buttons. */
+.profile-editor__row { display: flex; gap: var(--space-2); margin-top: 6px; }
+.profile-editor__row .btn { flex: 1; height: 44px; }
+
+/* The version box and the loader switch each fill their cell's width, so the
+   two read as one row of two controls. (They shared a wrapper of their own,
+   `.profile-editor__pair`, until the editor itself became the two-column
+   grid on 2026-09-17.) */
+.profile-editor .field > .select { width: 100%; }
+.profile-editor .field > .segmented { display: flex; }
+.profile-editor .field > .segmented .segmented__item { min-width: 0; }
+
+/* Game settings (2026-09-17): one choice whose rows carry profile names, so
+   it takes both columns, under Memory | Content and over the foot. */
+.profile-editor__wide { grid-column: 1 / -1; }
+
+.profile-editor__foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: var(--edge) solid var(--divider);
+}
+
+/* =========================================================================
+   ACCOUNTS
+   ========================================================================= */
+.add-account {
+  border-radius: var(--radius-xl);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-5);
+  text-align: left;
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+
+.add-account:hover { background-color: var(--glass-hover); }
+
+.add-account__plus {
+  border-radius: var(--radius-pill);
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--gradient-quiet);
+  border: var(--edge) solid var(--outline);
+  color: var(--accent);
+}
+
+.add-account__plus svg { width: 20px; height: 20px; }
+.add-account__title { font-size: var(--text-lg); font-weight: var(--weight-bold); }
+.add-account__sub { font-size: var(--text-md); color: var(--text-3); }
+.add-account__caret { color: var(--text-3); }
+.add-account__caret svg { width: 18px; height: 18px; }
+
+.section-title {
+  margin: var(--space-6) 0 var(--space-4);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.account-list { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.account-row {
+  border-radius: var(--radius-xl);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+
+.account-row:hover { background-color: var(--glass-hover); }
+.account-row.is-active { border-color: var(--accent); }
+
+.account-row__face-wrap { position: relative; flex: none; }
+
+.account-row__face {
+  border-radius: var(--radius-sm);
+  width: 56px;
+  height: 56px;
+  display: block;
+  image-rendering: pixelated;
+  background-color: var(--surface-3);
+  border: var(--edge) solid var(--outline);
+}
+
+.account-row__active {
+  border-radius: var(--radius-pill);
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--success);
+  color: var(--on-success);
+  border: var(--edge) solid var(--outline);
+}
+
+.account-row__active svg { width: 12px; height: 12px; }
+
+.account-row__name-line { display: flex; align-items: center; gap: var(--space-2); }
+.account-row__name { font-size: var(--text-xl); font-weight: var(--weight-bold); }
+.account-row__glyph { display: flex; color: var(--accent); }
+.account-row__glyph svg { width: 15px; height: 15px; }
+
+.account-row__meta { display: flex; align-items: center; gap: var(--space-3); }
+.account-row__added { font-size: var(--text-md); color: var(--text-3); }
+
+.account-tag {
+  border-radius: var(--radius-pill);
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--outline);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-wide);
+}
+
+.account-tag--ms { background: var(--gradient-quiet); color: var(--accent); }
+.account-tag--offline { background-color: var(--surface-3); color: var(--text-2); }
+
+.account-row__actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+
+.quiet-action {
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--text-2);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+}
+
+.quiet-action svg { width: 16px; height: 16px; }
+.quiet-action:hover { background: var(--hover); color: var(--text-1); }
+.quiet-action--icon { width: 36px; padding: 0; justify-content: center; }
+.quiet-action--danger:hover { background: var(--danger-quiet); color: var(--danger); }
+
+/* =========================================================================
+   SETTINGS — sections as a row of tabs, then one column of groups
+   ========================================================================= */
+/* Narrower than the 1040 the other pages fill (2026-09-07). A settings row
+   puts its name at the left edge and its control at the right one, so the
+   page's width is the distance the eye has to travel between a thing and the
+   switch that changes it: at 1680 that was nine hundred pixels. Vanilla's
+   options rows are about four hundred wide. This is the compromise — wide
+   enough for a sentence of description, short enough that the name and the
+   control read as one object. */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 100%;
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+.settings__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* The section picker is the masthead's tab strip — `.topnav`, `.nav-item` and the
+   travelling `.nav-slide`, all from shell.css, wired by ui/tabstrip.js — at this
+   strip's own size (2026-09-14, Adrian: "the settings category bar should look
+   and feel exactly the same as the main topbar … but it should keep the size it
+   has currently"). It had grown its own look: a single-deck tile with a boxed
+   glyph on the left, and four highlights that lit up in turn. Now it is the
+   same glass, the same glyph-over-word capsules, the same tint sliding behind
+   them, the same drag. Only these two rules are its own: it spans the settings
+   column rather than sizing to its labels, and it keeps the 58px it had (the
+   masthead's is 62) with the four tabs sharing the width equally. */
+.settings__nav {
+  width: 100%;
+  height: 58px;
+  justify-self: stretch;
+}
+
+.settings-tab {
+  flex: 1;
+  min-width: 0;
+}
+
+/* One quiet line under the tab strip, centred on it (2026-09-14). It was a
+   capsule of chrome glass hanging off the strip's left corner — a fourth island
+   that belonged to nothing and lined up with nothing. A sentence is not a
+   control, so it wears no glass: the same white-with-a-shadow every word over
+   the world wears. */
+.settings__note {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  text-shadow: var(--plate-shadow);
+}
+
+.settings__note-dot {
+  border-radius: var(--radius-pill); width: 7px; height: 7px; background: var(--success); }
+
+.settings__body { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+
+.group {
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-3);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  border: var(--panel-ring);
+  box-shadow: var(--shadow-lg);
+}
+
+.group__head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-3); }
+
+.group__title { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.group__sub { font-size: var(--text-md); color: var(--text-3); }
+
+.setting-row {
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--panel-raised);
+  /* A lit hairline, not the hard outline (2026-09-07). Every other slab in
+     the launcher meets the world across its edge and needs the 2px black to
+     hold that line; a setting row meets its own group panel, three deep in
+     black rings, and the only thing the ring drew there was a cell in a
+     table. The height and the sheen separate it now. */
+  border: 1px solid var(--border);
+  margin-top: var(--space-2);
+}
+
+.setting-row--stacked { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+
+.setting-row__text { flex: 1; min-width: 0; }
+.setting-row__name { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.setting-row__desc { font-size: var(--text-sm); color: var(--text-3); line-height: var(--leading-snug); }
+.setting-row__control { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+
+.mem-value { font-size: var(--text-md); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+
+/* =========================================================================
+   MODS
+   ========================================================================= */
+.profile-picker {
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-width: 210px;
+  height: 36px;
+  padding: 0 var(--space-3);
+  color: var(--text-1);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--edge) solid var(--outline);
+}
+
+.profile-picker:hover { background-color: var(--glass-quiet-hover); }
+.profile-picker[aria-expanded="true"] { border-color: var(--accent); }
+
+.profile-picker__dot {
+  border-radius: var(--radius-pill);
+  width: 9px;
+  height: 9px;
+  flex: none;
+  background: var(--text-3);
+}
+
+.profile-picker__face,
+.profile-option__face {
+  border-radius: var(--radius-xs);
+  width: 22px;
+  height: 22px;
+  flex: none;
+  image-rendering: auto;
+}
+
+.profile-picker__name { flex: 1; text-align: left; }
+
+.profile-picker__caret {
+  display: flex;
+  color: var(--text-3);
+}
+
+.profile-picker__caret svg { width: 14px; height: 14px; }
+
+.profile-option {
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  color: var(--text-1);
+}
+
+.profile-option:hover { background: var(--hover); }
+.profile-option.is-active { background: var(--gradient-selected); }
+.profile-option__name { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.profile-option__meta { font-size: var(--text-xs); color: var(--text-3); }
+
+.profile-option__count {
+  border-radius: var(--radius-pill);
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.profile-option.is-active .profile-option__count { color: var(--accent); }
+
+.search { position: relative; flex: 1; max-width: 320px; }
+
+/* A page's own switch (Mods / Resource packs), on the line above its tools. */
+.page-tabs { order: -2; display: flex; align-items: center; margin-bottom: var(--space-3); }
+
+.search svg {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+/* Opaque, unlike every other input (2026-09-07). `--surface-inset` is a black
+   wash meant to sink a field into the panel behind it, and this is the one
+   field in the launcher with no panel behind it — it floats on the toolbar
+   over the panorama, so the sky came through and "Search mods" was unreadable
+   against it. The picker and the two buttons beside it are opaque slabs; this
+   now matches them. */
+/* The one field in the launcher that floats on the world rather than sitting
+   in a panel, so it is glass rather than the sunken tint the others use — a
+   wash here let the sky through and "Search mods" went unreadable
+   (2026-09-07, kept as glass 2026-09-08). */
+.search .input {
+  padding-left: 36px;
+  height: 36px;
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+}
+
+.tabs-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+
+/* 330, not 300 (2026-09-07). At the launcher's smallest window the page has
+   928px inside it, which fitted three 301px columns by a single pixel — and a
+   mod card that narrow wraps its one-line description to three and then cuts
+   it ("Winds the game down while it sits behind something else. Kinder to a…").
+   At 330 that window drops to two comfortable columns and the sentence lands
+   whole; a 1280 window still gets three. */
+.mod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: var(--space-3);
+}
+
+.mod-card {
+  border-radius: var(--radius-xl);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  /* The switch row sits on the card's floor, whatever the sentence above it
+     ran to (2026-09-14): the cards in a grid row are already one height, and
+     without this a two-line description put Sodium's switch five pixels under
+     Lithium's, so a row of cards never read as one row of switches. */
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  cursor: pointer;
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+
+.mod-card:hover { background-color: var(--glass-hover); }
+.mod-card.is-off { opacity: 0.55; }
+/* Switched on, and not in the game: no build for this Minecraft, or older
+   than the mod's first one (2026-09-21). The switch keeps the player's
+   choice and stands back; the sentence under the name carries the reason,
+   in the warning colour so a glance down the grid finds it. */
+.mod-card.is-absent .switch,
+.mod-card.is-absent .mod-card__state { opacity: 0.45; }
+.mod-card.is-absent .mod-card__desc { color: var(--warning); }
+.mod-card .switch { pointer-events: none; }
+
+/* The icon zooms a little, slowly, under the pointer — the card's hover
+   motion, in place of a lift; the click still dips (2026-09-14, see
+   components.css). */
+.mod-card__block {
+  border-radius: var(--radius-sm);
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--outline);
+  transition: transform var(--dur-zoom) var(--ease-out);
+  will-change: transform; /* its own layer, so the click never re-draws it */
+}
+
+.mod-card:hover .mod-card__block { transform: scale(var(--zoom)); }
+
+.mod-card__body { min-width: 0; }
+.mod-card__head { display: flex; align-items: center; gap: var(--space-2); }
+.mod-card__name { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.mod-card__author { font-size: var(--text-xs); color: var(--text-3); }
+
+.mod-card__desc {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  line-height: var(--leading-snug);
+  margin-top: var(--space-2);
+  display: -webkit-box;
+  /* Three, not two (2026-09-07). Every one of these sentences is written here
+     — they are the launcher's own words for what a mod does, not the author's
+     blurb — and the longest of them ran to three lines at the column width the
+     grid gives, so Dynamic FPS ended "Kinder to a…". The cards in a row are
+     already the height of the tallest, so the third line costs nothing on the
+     page and stops the one sentence that needs it from being cut mid-word. */
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mod-card__foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--edge) solid var(--divider);
+}
+
+/* The word beside the switch. It goes with the card's own dimming when the mod
+   is off, so a glance down a column reads the same answer twice. */
+.mod-card__state {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-2);
+}
+
+.mod-card:not(.is-off) .mod-card__state { color: var(--text-1); }
+
+/* =========================================================================
+   Language menu
+   ========================================================================= */
+.lang-item {
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-1);
+  text-align: left;
+}
+
+.lang-item:hover { background: var(--hover); }
+.lang-item.is-active { background: var(--gradient-selected); color: var(--accent); }
+
+.lang-item__code {
+  width: 22px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.lang-item.is-active .lang-item__code { color: var(--accent); }
+.lang-item__name { flex: 1; font-size: var(--text-md); }
+.lang-item__check { display: grid; place-items: center; }
+.lang-item__check svg { width: 14px; height: 14px; }
+
+.menu__account.is-active { background: var(--gradient-selected); }
+
+.menu__account-dot {
+  border-radius: var(--radius-pill);
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--success);
+}
+
+/* ---- Add-account chooser -----------------------------------------------
+   Two rows INSIDE the sheet, so they are a tint on its glass and carry no
+   blur of their own — the container rule, which these two broke for a few
+   hours on 2026-09-09 and which is worth restating because breaking it does
+   not look like glass, it looks like a hole: --glass over --glass-deep
+   composites darker than --glass-deep alone, so both choices came out darker
+   than the modal holding them and the whole sheet read as a black box
+   (Adrian: "its too dark and weird"). A raised thing is LIGHTER than what
+   holds it. Same tint pair the setting rows wear. */
+.choice {
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  text-align: left;
+  background-color: var(--panel-raised);
+  background-image: var(--sheen-raised);
+  border: var(--edge) solid var(--border);
+}
+
+.choice:hover { background-color: var(--panel-hover); }
+
+.choice__icon {
+  border-radius: var(--radius-md);
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--surface-inset);
+  border: 1px solid var(--outline);
+  color: var(--text-2);
+}
+
+.choice__icon--ms { background: var(--gradient-quiet); color: var(--accent); }
+.choice__icon svg { width: 19px; height: 19px; }
+.choice__title { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.choice__sub { font-size: var(--text-md); color: var(--text-3); }
+/* Why the last sign-in failed, on the row, until the next press (2026-09-16). */
+.choice__sub--why { color: var(--danger); }
+.choice__caret { display: flex; color: var(--text-3); }
+.choice__caret svg { width: 17px; height: 17px; }
+
+/* The way in — the sign-in row wears the confirm green as a tint, at the
+   weight the cyan --selected uses. It is the same surface as the row below it
+   and differs in colour alone; the green edge and the green mark carry the
+   recommendation, which is work a solid fill was doing at the cost of being
+   the only opaque thing on the screen. */
+.choice--confirm {
+  background-color: var(--confirm-tint);
+  border-color: var(--confirm);
+}
+.choice--confirm:hover { background-color: var(--confirm-tint-hover); }
+.choice--confirm .choice__caret { color: var(--confirm); }
+
+.choice--confirm .choice__icon--ms {
+  background: var(--surface-inset);
+  color: var(--confirm);
+}
+
+/* =========================================================================
+   Mod catalogue (Add mods drawer)
+   ========================================================================= */
+.catalog__search { position: relative; }
+
+.catalog__search svg {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.catalog__search .input { padding-left: 36px; height: 40px; }
+/* The line holds its height with nothing on it: Browse skins blanks it
+   while a note is up, and a line that collapsed to nothing moved the whole
+   grid up by itself and back down with the next answer (2026-09-10). */
+.catalog__status { min-height: 18px; font-size: var(--text-sm); color: var(--text-3); }
+
+/* Browse skins (2026-09-10): the field gives up its right end to a dropdown
+   that says what the words are — a player's name, or what the skin looks
+   like. The two sit in one row, the field taking what the dropdown leaves. */
+/* No `gap`: the magnifier is positioned against this box and the span that
+   carries it is a flex item of zero width, so a gap pushed the field 8px right
+   of the icon pinned to the row — the glass left the icon sitting on the
+   field's own edge instead of inside it. The dropdown keeps its distance with
+   a margin of its own. */
+.catalog__search--modes { display: flex; align-items: center; }
+.catalog__search--modes .input { flex: 1 1 auto; min-width: 0; }
+.catalog__search--modes .select-btn { flex: none; height: 40px; margin-left: var(--space-2); }
+
+.catalog { display: flex; flex-direction: column; gap: var(--space-3); }
+
+/* Inside the drawer, so a tint on it — see .choice. */
+.catalog-row {
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background-color: var(--panel-raised);
+  background-image: var(--sheen-raised);
+  border: var(--edge) solid var(--border);
+}
+
+.catalog-row:hover { background-color: var(--panel-hover); }
+
+/* Placeholder rows keep the panel from collapsing between searches. */
+.catalog-row.is-skeleton {
+  height: 92px;
+  background-color: var(--surface-1);
+  border-color: var(--divider);
+}
+
+.catalog-row__icon {
+  border-radius: var(--radius-sm);
+  width: 44px;
+  height: 44px;
+  flex: none;
+  object-fit: cover;
+  background-color: var(--surface-3);
+  border: 1px solid var(--outline);
+  transition: transform var(--dur-zoom) var(--ease-out);
+  will-change: transform;
+}
+
+.catalog-row:hover .catalog-row__icon { transform: scale(var(--zoom)); }
+
+.catalog-row__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.catalog-row__head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.catalog-row__name { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.catalog-row__author { font-size: var(--text-sm); color: var(--text-3); flex: none; }
+
+.catalog-row__desc {
+  font-size: var(--text-md);
+  color: var(--text-2);
+  line-height: var(--leading-snug);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.catalog-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.catalog-row__meta svg { width: 13px; height: 13px; }
+.catalog-row .btn { flex: none; align-self: center; }
+
+/* =========================================================================
+   Player model — a real CSS 3D skin, draggable to turn
+   ========================================================================= */
+.mc-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 200px;
+  display: grid;
+  place-items: center;
+  perspective: 900px;
+  perspective-origin: 50% 45%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mc-stage.is-dragging { cursor: grabbing; }
+
+.mc-model {
+  position: relative;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+  transform:
+    translateY(var(--drop, 0px))
+    scale3d(var(--model-zoom, 1), var(--model-zoom, 1), var(--model-zoom, 1))
+    rotateX(-4deg)
+    rotateY(var(--yaw, -14deg));
+}
+
+/* Nothing here transitions. Every motion the model has — the drag, the coast,
+   the zoom, the walk, the return to rest — is written frame by frame from
+   character.js into --yaw, --model-zoom and the four --swing-* properties, because
+   they all write the same transform and a CSS transition would restart on
+   every one of those frames and then snap when it was taken away. The return
+   used to be the exception, a 300ms transition on this class, and it was the
+   one that went wrong: it unwound however many turns the model had been given,
+   all inside those 300ms. */
+
+.mc-box {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+.mc-face {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background-image: var(--skin, url("../assets/art/steve.png"));
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  backface-visibility: hidden;
+}
+
+/* Reduced motion is honoured in character.js, where the motion is: the return
+   lands in one frame and the model does not walk. */
+
+/* ---- Skins -------------------------------------------------------------
+   The button sits in the top right of the block the player stands in
+   (Adrian, 2026-09-04): its right edge lands on the launch stack's, and it is
+   level with the nameplate so the two read as one row over his head.
+
+   It hangs off .home__centre and not off .player — that box is only as wide
+   as the model's stage, because the column centres its children, and it
+   clips, because the model's legs run under Play.
+
+   right:0, because the stack IS the column now. It was inset by
+   calc((100% - 420px) / 2) from the day the stack was a fixed 420 centred in
+   a wider column; the stack has taken the full --home-play width since, so
+   that formula left the button 30px short of the edge it is supposed to
+   land on (2026-09-09, Adrian: "skins button isnt even alligned to the
+   right"). Anything that measures off the stack should read --home-play or
+   nothing at all — never a number the stack used to be. */
+.skins-open,
+.layout-open,
+.layout-reset {
+  border-radius: var(--radius-pill);
+  /* One size up from .btn--sm without going to a full .btn: it stands beside
+     the nameplate, which is 31px, and a 36px button next to it reads as two
+     unrelated things rather than one row (2026-09-09, "the button could be
+     slightly larger too"). */
+  height: 34px;
+  padding: 0 var(--space-4);
+  font-size: var(--text-md);
+  background-color: var(--glass-quiet);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--edge) solid var(--outline);
+}
+
+/* `:not(:disabled)` matches the plain `.btn:hover:not(:disabled)` rule's
+   specificity; without it that rule won and hovered this glass capsule to the
+   tint token `--panel-hover` — the one hover the colour rules forbid, and the
+   flip to bright Adrian saw (2026-09-09, "it turns too light"). */
+.skins-open:hover:not(:disabled),
+.layout-open:hover:not(:disabled),
+.layout-reset:hover:not(:disabled) { background-color: var(--glass-quiet-hover); }
+.skins-open svg,
+.layout-open svg,
+.layout-reset svg { width: 15px; height: 15px; }
+
+/* Skins on the right; Layout (2026-09-17) the same capsule on the left, so
+   the two read as one row with the nameplate between them. Its own class,
+   not a second .skins-open: the capture tools press .skins-open by name.
+   Layout stands in a row of its own (.layout-tools) because Reset joins it
+   while the page is being arranged. */
+/* top is the block's --home-drop, not 0: an absolute child measures from
+   the padding box's edge, and the block's padding is what puts the
+   nameplate on the cards' line (see .home__centre). */
+.skins-open {
+  position: absolute;
+  top: var(--home-drop);
+  right: 0;
+  z-index: 2;
+}
+
+.layout-tools {
+  position: absolute;
+  top: var(--home-drop);
+  left: 0;
+  z-index: 2;
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Layout while it reads Done: the accent on its rim and its word, the way an
+   Add button wears green — the capsule itself stays the same glass. It is
+   the one thing on the page that says the mode is on. */
+.layout-open.is-on {
+  border-color: var(--accent-rim);
+  color: var(--accent);
+}
+
+.layout-reset[hidden] { display: none; }
+
+/* Three slots, one row, each as wide as the others. The grid is only a grid:
+   it lives inside the modal, and a pane of glass inside a pane of glass
+   inside the scrim was three blurs deep for one screen. */
+.skins {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  /* One height for every kind of tile. A filled slot measures 303px — the
+     200px stage, the arms line (19) and the foot (30) with 12 between them,
+     16 of padding above and 12 below, and the two edges — and an empty slot,
+     or one still waiting for main to say what is in it, is the same. The
+     panel therefore opens at the height it keeps: a grid that grew as the
+     answer landed did it under a 44px blur mid-animation, which is the same
+     fault Browse skins had (2026-09-10). */
+  --slot-h: 303px;
+}
+
+/* Nothing may be clicked while main is answering — one skin at a time. The
+   dim itself is held back 150ms by the page, so it only appears for work
+   long enough to be worth saying; when it does it fades like everything else
+   under the pointer rather than snapping. */
+.skins {
+  transition: opacity var(--dur-base) var(--ease-in-out);
+}
+
+.skins.is-busy {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* A tint on the modal's glass, like every other row inside a sheet. */
+.skin-slot {
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--slot-h);
+  padding: var(--space-4) var(--space-3) var(--space-3);
+  background-color: var(--panel-raised);
+  background-image: var(--sheen-raised);
+  border: var(--edge) solid var(--border);
+}
+
+/* A tile before main has said what is in it — the quiet fill the browse
+   grid's placeholders use, and nothing written on it. */
+.skin-slot--holding {
+  background-color: var(--surface-1);
+  background-image: none;
+  border-color: var(--divider);
+}
+
+/* The one being worn is marked the way the playing song is on the Music
+   page: the accent on its edge and nothing else shouting. */
+.skin-slot.is-worn {
+  border-color: var(--accent);
+}
+
+.skin-slot__stage {
+  border-radius: var(--radius-md);
+  width: 100%;
+  height: 200px;
+  display: flex;
+  justify-content: center;
+}
+
+/* The stage keeps a floor of its own for the home screen; in a slot the tile
+   decides the height instead. */
+.skin-slot__stage .mc-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Which model the sheet was drawn for. A cycling button rather than a pair of
+   radios: it is one answer with two values, and the in-game menu spells the
+   same kind of choice the same way. */
+.skin-slot__arms {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.skin-slot__arms:hover { color: var(--text-1); }
+
+.skin-slot__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.skin-slot__wear { flex: 1; }
+
+/* An empty slot is the whole tile, and says what it takes. Its height is
+   the one every tile has — see --slot-h. */
+.skin-slot--empty {
+  justify-content: center;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    color var(--dur-base) var(--ease-out);
+}
+
+.skin-slot--empty:hover {
+  background-color: var(--panel-hover);
+  color: var(--text-1);
+}
+
+.skin-slot__plus svg {
+  width: 26px;
+  height: 26px;
+}
+
+.skin-slot__name {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.skin-slot__note {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+/* ---- Browse skins (2026-09-09) ----------------------------------------
+   A wall of small flat skins: popular this week until a name is typed, then
+   that player's. The cards are tints on the modal's glass like every other
+   tile inside a sheet — a grid of two dozen blurred panes would be two dozen
+   blurs over the live world. */
+.skin-find {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-3);
+}
+
+.skin-find__card {
+  border-radius: var(--radius-lg);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2);
+  cursor: pointer;
+  background-color: var(--panel-raised);
+  background-image: var(--sheen-raised);
+  border: var(--edge) solid var(--border);
+  /* The same eases every other tile in the launcher has: without them the
+     hover and the press snapped, which on a grid of two dozen read as the
+     cards flickering under the pointer (2026-09-10). */
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-press-out) var(--ease-out);
+}
+
+.skin-find__card:hover { background-color: var(--panel-hover); }
+.skin-find__card:active { transform: scale(var(--press-tile)); transition-duration: var(--dur-press-in); }
+
+/* Kept: the accent on its edge and the tick lit, the same way a worn slot is
+   marked — nothing shouting, and it stays marked so a second click on the
+   same skin is obviously a repeat. */
+.skin-find__card.is-kept { border-color: var(--accent); }
+.skin-find__card.is-kept .skin-find__badge { opacity: 1; }
+
+.skin-find__badge {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  opacity: 0;
+  color: var(--accent);
+  line-height: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.skin-find__badge svg { width: 14px; height: 14px; }
+
+/* The sheet is drawn at a whole number of device pixels per skin pixel and
+   given exactly that size, so nothing is resampled on the way to the screen
+   — `flatSize` in js/skin.js says how. It was 100% of the column once, and a
+   pixelated downscale made every other skin pixel a column wider. */
+.skin-flat {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* One line under every card, written on or not, so a grid of popular skins
+   (no dates) is the same height as a player's history (dated) and as the
+   placeholders that stood for either. */
+.skin-find__label {
+  max-width: 100%;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-3);
+}
+.skin-find__label:empty::before { content: '\00a0'; }
+
+/* Placeholder tiles hold the grid's shape between searches, so the panel does
+   not collapse and jump while a name is looked up. */
+.skin-find__card.is-skeleton {
+  background-color: var(--surface-1);
+  background-image: none;
+  border-color: var(--divider);
+  pointer-events: none;
+}
+
+/* A placeholder is the shape of the card it stands in for — the sheet is
+   drawn twice as tall as it is wide and scaled to the column, plus a line for
+   the label — so the grid, and the panel round it, are the same height before
+   the results land as after. They used to be a fixed 132px against cards of
+   about 250, and the panel doubled in height as the first grid arrived, right
+   as its entry animation ended (Adrian, 2026-09-10: "the liquid glass kind of
+   glitches for a short second"). */
+.skin-find__ghost {
+  /* Sized inline by skins.js to the same box a drawn sheet takes. */
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.skin-find__ghost-label {
+  width: 60%;
+  height: 12px;
+  margin: 2px 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+/* "No player called…", or the index being unreachable: one tile across the
+   whole grid rather than a lonely card in the first column. No margin of
+   its own — the panel's gaps already hold it off the line above. */
+.skin-find__note { grid-column: 1 / -1; margin: 0 auto; }
+
+/* Three slots is the design, so a fourth skin has to displace one. The row of
+   what is kept appears only at that moment, above the grid. */
+.skin-find__replace {
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  background-color: var(--surface-1);
+  border: var(--edge) solid var(--border);
+}
+
+.skin-find__replace-say {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  margin-bottom: var(--space-3);
+}
+
+.skin-find__replace-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.skin-find__slot {
+  border-radius: var(--radius-md);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  padding: var(--space-2);
+  cursor: pointer;
+  background-color: var(--panel-raised);
+  border: var(--edge) solid var(--border);
+  transition:
+    background-color var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.skin-find__slot:hover { background-color: var(--panel-hover); border-color: var(--accent); }
+
+.skin-find__slot-worn {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  font-size: var(--text-xs);
+  color: var(--accent);
+}
+
+.skin-find__replace-row .btn { margin-left: auto; }
+
+/* =========================================================================
+   Clips (2026-09-06)
+   The card is the clip: its first frame, playing muted under the mouse.
+   Cut like everything else — no radius, a hard ring, a bevelled button.
+   ========================================================================= */
+.clip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+.clip-grid > .empty { grid-column: 1 / -1; }
+
+.clip-card {
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+.clip-card:hover { background-color: var(--glass-hover); }
+
+.clip-card__frame {
+  border-radius: var(--radius-md);
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  border-bottom: var(--edge) solid var(--divider);
+  background: var(--bg-sunken);
+  cursor: pointer;
+  overflow: hidden;
+}
+.clip-card__frame:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.clip-card__video,
+.clip-card__shot { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Over the still, shown only while the pointer is on the card and the video
+   has a frame; the card with no still yet has no picture under it and the
+   video fills the frame alone. */
+.clip-card__video { position: absolute; inset: 0; }
+
+.clip-card__duration {
+  border-radius: var(--radius-pill);
+  position: absolute;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  padding: 1px var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--on-plate);
+  background: var(--scrim);
+}
+.clip-card__duration:empty { display: none; }
+
+.clip-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--space-3) var(--space-4) 0;
+}
+.clip-card__name { font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.clip-card__meta { font-size: var(--text-xs); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+.clip-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+/* The star that keeps a clip or screenshot (2026-09-19): the same ghost
+   button as the folder and the bin beside it, an outline until pressed. On,
+   the glyph is filled and the button wears the accent, the way Layout wears
+   it while it reads Done — the colour every "this one is on" control in the
+   launcher already speaks. The hover keeps the colour, or the star would go
+   white under the pointer the moment after it was pressed. */
+.clip-card__star[aria-pressed="true"],
+.clip-card__star[aria-pressed="true"]:hover:not(:disabled) { color: var(--accent); }
+.clip-card__star[aria-pressed="true"] svg { fill: currentColor; }
+
+
+/* =========================================================================
+   HOME SIDE — three panels: where you left off, the partners, your play.
+   The two ledger panels are hidden until the record answers (see home.js),
+   so a fresh install sees exactly what it saw before: the partner list.
+   ========================================================================= */
+.home__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  min-width: 0;
+  /* The same band the player column leaves under itself, so the foot of the
+     last panel and the foot of the profile row land on one line. */
+  margin-bottom: var(--home-floor);
+  /* The little air under the bar (see --home-drop on .home). */
+  padding-top: var(--home-drop);
+}
+
+/* A list card — Where you left off, Friends — takes its column's slack and
+   shows as many rows as fit it (fitRows in pages/home.js). Its floor is the
+   head and one row, so a column of three cards still has a row to show. */
+.side-card .side-card__body.side-card__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* From the top: the rows share the height by themselves, and a card with
+     nothing to list keeps its one line under the title, not mid-card. */
+  justify-content: flex-start;
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+/* A row in a list is a tinted slab on the card's glass, like a featured
+   row — the same floor, the same hairline, the same specular — so the two
+   columns read as one kind of thing either side of the player. */
+.side-card__list .cont-row {
+  flex: 1 1 0;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-2);
+  border: var(--edge) solid var(--outline);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+  position: relative;
+  overflow: hidden;
+}
+
+.side-card__list .cont-row[hidden] { display: none; }
+
+/* A column the player has left without a list card — Cosmetics alone, or
+   Cosmetics over Featured servers — would stop short of the floor with the
+   air under it that this layout exists to remove, so there the two
+   content-sized cards take the slack instead: the server rows grow as they
+   always have, Cosmetics keeps its body centred. A column with a list in it
+   hands the slack to the list, as below. */
+.home__side:not(:has(.side-card__list)) > .side-card--play,
+.home__side:not(:has(.side-card__list)) > .partners { flex: 1 1 auto; }
+
+/* A row that is a press — a server you can walk back into, a friend on one
+   — hovers as a featured row does and wears the same play glyph under the
+   pointer. */
+.cont-row--press {
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+.cont-row--press:hover { background-color: var(--panel-hover); }
+.cont-row--press:active { box-shadow: inset 0 1px 0 0 var(--spec); }
+
+.cont-row__glyph {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+  color: var(--on-accent);
+  opacity: 0;
+  transform: translate(8px, -50%);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.cont-row__glyph svg { width: 13px; height: 13px; }
+
+.cont-row--press:hover .cont-row__glyph,
+.cont-row--press:focus-visible .cont-row__glyph {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.cont-row__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* ---- Friends (2026-09-21) ---------------------------------------------- */
+/* The floor is the head (30px with its Add button), one row and the card's own padding, so a column of three still shows a whole row. */
+.side-card.side-card--friends { flex: 1 1 auto; min-height: 132px; }
+
+/* Add friends, at the head's right (the same evening): a small capsule
+   with the add colour on its rim and word, the way every add button here
+   wears it. The head aligns on the baseline; the capsule's own middle is
+   what should sit on the title's, so it is centred instead. */
+.side-card__add {
+  align-self: center;
+  margin-left: var(--space-1);
+  white-space: nowrap;
+}
+
+.side-card__add[hidden] { display: none; }
+
+/* The Add-a-friend dialog (ui/addfriend.js): the answer under the field,
+   in the warning colour when it is a refusal, and the invitation button
+   for a name that has never opened BlueClient. */
+.add-friend__line { min-height: 1.3em; }
+.add-friend__line.is-why { color: var(--danger); }
+.add-friend__line[hidden],
+.add-friend__invite[hidden] { display: none; }
+.add-friend__invite { align-self: flex-start; }
+
+/* The friend's own head, painted from their skin sheet (skin.js paintHead);
+   a tint box until it lands. */
+.friend-row__face {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--outline);
+  background-color: var(--surface-1);
+  image-rendering: pixelated;
+}
+
+.friend-row.is-off { opacity: 0.62; }
+
+.side-card {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-2xl);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--panel-ring);
+  box-shadow: inset 0 1px 0 0 var(--spec), var(--shadow-md);
+}
+
+.side-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+}
+
+.side-card__title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+.side-card__note { font-size: var(--text-sm); color: var(--text-3); white-space: nowrap; }
+
+/* What a panel says before the ledger has anything to give it. One plain line,
+   at the place it applies, once — never a fake number in the shape of one. */
+.side-card__empty {
+  display: block;
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  line-height: var(--leading-snug);
+}
+
+/* ---- Where you left off ------------------------------------------------ */
+.cont-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.cont-row__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.cont-row__icon svg { width: 19px; height: 19px; }
+
+/* The server's own logo in that box once it lands (servericons.js,
+   2026-09-13): the picture fills the box the glyph held, hairline and all,
+   the way a featured row's does. The tint goes with the glyph. */
+.cont-row__icon.has-logo {
+  background: none;
+  overflow: hidden;
+  border: 1px solid var(--outline);
+}
+
+.cont-row__logo {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.cont-row__name { font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.cont-row__meta { font-size: var(--text-sm); color: var(--text-3); }
+/* The words take the row's width, so Continue stands at the row's right
+   edge whatever the name's length (2026-09-21, evening; Adrian: "it should
+   always be put to all the way to the right in the box") — it sat wherever
+   the name ended. */
+.cont-row > .stack { flex: 1 1 auto; }
+.cont-row__go { flex: none; height: 40px; }
+
+/* ---- Your play ---------------------------------------------------------
+   Seven bars, the last seven days, today at the right (2026-09-12; it was
+   Monday to Sunday from 2026-09-10). The note that stood here said day-bars
+   "would be an invention", because the ledger's PLACES carry no dates — true
+   of that map, and false of the file it comes from: the mod has always
+   written a second list of one entry per sitting, kept two years, and the
+   launcher was throwing it away. See src/main/ledger.js.
+
+   The named-places capsule below (.play-stack, .play-legend) is the card this
+   replaced. It was not deleted — it is what the Stats page draws, where there
+   is room for the whole list rather than six rows of it. */
+.play-figure { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
+
+/* Large, and one step down from the largest (Adrian, 2026-09-09, evening:
+   "slightly smaller, it should still be visible and large just slightly
+   smaller"). At --text-3xl a four-figure total ran the width of the card and
+   pushed "across N places" onto its own line; at --text-2xl the two sit on one
+   baseline again. Tabular figures so the number does not jitter as the minutes
+   tick over while a game is running. */
+.play-figure__num {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.play-figure__sub { font-size: var(--text-sm); color: var(--text-3); }
+
+/* The level, at the right of the figure line (2026-09-12, evening): the one
+   number on the card that only ever goes up. Since 2026-09-17 it stands at
+   the right of the cape row rather than the week's figure (gone). The 4px
+   bar to the next level that hung under it came off on 2026-09-15; the
+   hover line still says how far that is. The ladder is levelOf() in
+   src/main/ledger.js. */
+.play-level {
+  margin-left: auto;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.play-level__num {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The fill the first-play card's empty track (.play-first__track) draws at
+   0% — the bar under the level on the played card used it until 2026-09-15. */
+.play-level__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* The streak in the card's head, with its flame: lit (the accent) while
+   today has been played, the note's own grey while the run is still to be
+   kept. The flame is the one glyph on the card, and the word is the same
+   one Stats uses. */
+.side-card__note.is-lit { color: var(--text-1); }
+
+.play-streak__flame {
+  display: inline-flex;
+  vertical-align: -3px;
+  margin-right: 3px;
+  color: var(--text-3);
+}
+
+.play-streak__flame svg { width: 14px; height: 14px; }
+
+.side-card__note.is-lit .play-streak__flame { color: var(--accent); }
+
+/* The next cape and the road to it (2026-09-17; the week's seven bars stood
+   here from 2026-09-12 to this day — Adrian: "we must remove the day by day
+   playtime, and instead make the focus on leveling up towards the cape").
+   Sized to the card's fixed body of 120: a 45px row (the cape's face at
+   three pixels a unit, the name over its line, the level at the right), an
+   8px road, and the two ends under it. Nothing here gives, and nothing here
+   may grow — the column is content-sized and hands nothing over. */
+.play-cape {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.play-cape__face {
+  flex: none;
+  display: flex;
+}
+
+.play-cape__face .cape-face {
+  width: 28px;
+  height: 45px;
+  border-radius: 2px;
+}
+
+/* The one still to be earned is at half strength; the one worn is lit. */
+.play-cape__face.is-dim { opacity: 0.5; }
+
+.play-cape__words {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.play-cape__name {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.play-cape__line {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The road: a bar from Level 1 to the cape's level, filled to yours — in
+   levels, the launcher's own unit; the words beside it say the hours. */
+.play-road {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.play-road__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.play-road__ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.play-road__ends b { color: var(--text-1); font-weight: var(--weight-semibold); }
+
+/* The two ledger panels take the height the partner card gave up (2026-09-08).
+   Where you left off holds one row, so it gets a floor and centres its body in
+   it rather than growing without limit; Your play takes the rest, and its bars
+   grow with it — the tallest bar is the same place whatever height it is. */
+/* 116, not 128 (2026-09-10): its one row needs 40 and sat in 65 of body, and
+   the twelve pixels went to Your play above, whose six rows needed them. */
+.side-card--cont {
+  flex: 1 1 auto;
+  min-height: 124px;
+}
+
+.side-card--cont .side-card__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.side-card--play {
+  /* Content-sized since 2026-09-21: the slack of a column goes to its list
+     cards (Where you left off, Friends), which have rows to give. */
+  flex: 0 0 auto;
+  /* 180, not 168 (2026-09-10): the twelve pixels Where you left off gave up,
+     taken here on purpose — the column is content-sized, so nothing hands
+     them over by itself. It held a six-row legend at that height, then the
+     week's seven bars, and since 2026-09-17 the next cape and the road to it;
+     the block's arithmetic is over .play-cape and .play-road. */
+  min-height: 180px;
+}
+
+/* A whole card that is one control — Your play opens Stats (2026-09-10). It
+   hovers and presses like the large tiles elsewhere: glass to its own
+   --glass-hover, never to a tint, and the gentler of the two press scales
+   because a panel this size moving by the button amount reads as a lurch. */
+.side-card--link { cursor: pointer; }
+
+.side-card--link:hover { background-color: var(--glass-hover); }
+
+.side-card--link:active { transform: scale(var(--press-tile)); }
+
+.side-card--link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The heading and the figures belong to the card, not to a control inside it,
+   so nothing in here takes the pointer off the card itself. */
+.side-card--link * { cursor: inherit; }
+
+.side-card--play .side-card__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;   /* the row, the road and its ends sit mid-card (2026-09-17) */
+  gap: var(--space-2);
+  min-height: 0;
+}
+
+/* =========================================================================
+   HOME LAYOUT — the four blocks, and arranging them (2026-09-17)
+
+   Where the blocks stand is the player's: pages/layout.js. The columns swap
+   by a class on the grid, the cards reorder by `order` in their column, and
+   nothing is ever moved in the document — the grid's two tracks are the same
+   width and every card keeps its own height, so a swap changes nothing about
+   the composition but where things are.
+
+   The mode is the iPhone's (Adrian, the same afternoon: "make it the same as
+   when moving around apps on the homescreen in an iphone" — and "i dont like
+   the bluer boxes around the elements", which the first build drew). While
+   Layout is pressed the four blocks jiggle, each on its own beat, and nothing
+   else is drawn on them; the one picked up stops, grows a little, casts a
+   deeper shadow and follows the hand; the rest spring out of its way; let go
+   and it springs into its slot.
+
+   Three transforms, three properties, so none fights another: the jiggle is
+   an animation of `rotate`, the lift is `scale`, the drag and the springs
+   are `translate` written by layout.js. All three turn about the centre,
+   which is what layout.js measures by.
+   ========================================================================= */
+.home.is-arranging { user-select: none; }
+
+.home.is-arranging .side-card,
+.home.is-arranging .partners { position: relative; }
+
+/* Done and Reset stand over the player's pane; the Skins capsule sits under
+   it, since there is nothing to press until the arranging is over. */
+.home.is-arranging .layout-tools { z-index: 4; }
+
+/* Your play is one control — a card that hovers and dips — and while
+   arranging it is a block like the other three. */
+.home.is-arranging .side-card--link:hover { background-color: var(--glass); }
+.home.is-arranging .side-card--link:active { transform: none; }
+
+/* The jiggle: a very small swing either side of upright, back and forth —
+   ±0.3° (Adrian, on ±0.7°: "the wobbling is good but make it very slight"). The
+   length and the start of each block's swing are set inline by layout.js so
+   the four never move together. */
+@keyframes home-jiggle {
+  from { rotate: -0.3deg; }
+  to { rotate: 0.3deg; }
+}
+
+.home.is-arranging [data-block] {
+  animation: home-jiggle 0.28s ease-in-out infinite alternate;
+  transition: scale var(--dur-fast) var(--ease-out);
+}
+
+/* The pane over each block while arranging (appended by layout.js): the
+   drag handle, and what keeps a press from reaching Play, a server row or
+   the card that opens Stats. It draws nothing — the jiggle is the whole of
+   what says the mode is on. */
+.home-block {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: var(--radius-2xl);
+  cursor: grab;
+  touch-action: none;
+}
+
+/* The player's block ends on the same line the cards do — the column runs
+   on under it to the page's foot, which is the band the profile row's
+   bottom edge is measured against. */
+.home__centre > .home-block { inset: 0 0 var(--home-floor); }
+
+.home-block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Picked up: it stops jiggling, grows, stands over the others and follows
+   the hand on a translate written every move — so no transition on that,
+   only on the growing. */
+.home.is-arranging .is-lifting {
+  z-index: 6;
+  animation: none;
+  scale: 1.03;
+  transition: scale var(--dur-fast) var(--ease-out);
+}
+
+.is-lifting > .home-block { cursor: grabbing; }
+
+/* Let go, or stepped out of the way of the one under the hand: a block
+   springs from where it was drawn to where it now belongs (the FLIP in
+   layout.js), on the house spring, and back to its size. A translate,
+   never layout — the motion rule; and the one place the launcher glides
+   past --dur-fast, because a spring that short is a snap. */
+.home.is-arranging .is-settling {
+  transition:
+    translate var(--dur-slow) var(--ease-spring),
+    scale var(--dur-fast) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home.is-arranging [data-block] { animation: none; }
+  .home.is-arranging .is-settling,
+  .home.is-arranging .is-lifting { transition: none; }
+}
+
+
+/* =========================================================================
+   Cosmetics — the level, the road to the cape, and what is still to come
+   (2026-09-10 as Stats / Your play; two cards on the top row and the name
+   Cosmetics since 2026-09-17; the shelf under them the same evening)
+
+   Reached by pressing the Cosmetics card on Home. Two cards side by side,
+   a wide one under them, the world under that: the Level card (the player
+   from behind wearing his cape, the name, the cape and the streak as pills,
+   the level and its bar, three figures — what Copy as image photographs),
+   the Capes card (the next cape as the goal with the road to it, every
+   other cape a row; once all are earned, Yours with its colours), and More
+   to wear (a shelf of the kinds of cosmetics not built yet, bare tiles with
+   a hairline between). The week chart and Next up were here until
+   2026-09-17 and are gone at Adrian's word — the page's one subject is
+   levelling up towards the cape (see the header of pages/stats.js). The
+   classes keep the stats- prefix the page was born with.
+   ========================================================================= */
+.stats {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  grid-template-rows: auto;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+/* The page heading stands on the world, not on glass, so it carries its own
+   shadow the way every other white word out there does. */
+.stats__title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  text-shadow: var(--plate-shadow);
+}
+
+.stats__empty {
+  color: var(--text-3);
+  padding: var(--space-6) 0;
+  grid-column: 1 / -1;
+}
+
+.stats-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+}
+
+.stats-panel__head { display: flex; align-items: baseline; gap: var(--space-3); }
+
+.stats-panel__title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.stats-panel__note {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "New" beside the level, the day it was reached — a capsule of the accent's
+   quiet tint. The one word on the page that is a reaction rather than a
+   figure. */
+.stats-tile__new {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-quiet);
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+/* ---- The Level card (2026-09-17) -----------------------------------------
+   A poster: the model on a stage down the left, and beside him three rows —
+   the head (name, since, the two pills), the level with its bar, the three
+   figures — spread over the card's height. The card is the height the
+   stage gives it, ~296px, and the Capes card beside it stretches to match.
+   Everything in it is type on the card's glass; the pills are the one tint. */
+.stats-hero {
+  display: grid;
+  grid-template-columns: 198px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0 var(--space-5);
+  padding: var(--space-4) var(--space-6) var(--space-4) var(--space-2);
+  min-height: 0;
+}
+
+/* The Home model's stage, at a size where the whole figure shows (the
+   character's overflow is under 1 here) and the crown of a hat layer keeps
+   clear of the top. */
+.stats-hero__stage {
+  grid-column: 1;
+  grid-row: 1 / 4;
+  width: 198px;
+  height: 268px;
+  min-height: 0;
+  align-self: center;
+}
+
+.stats-hero__top {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.stats-hero__who {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stats-hero__name {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.stats-hero__since {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* The two pills: the cape worn (its face at two pixels a unit) and the
+   streak with its flame — lit while today has been played, the card's own
+   grey while the run is still to be kept; the tip says which. */
+.stats-hero__cape,
+.stats-hero__streak {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 11px 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  border: 1px solid var(--outline);
+}
+
+.stats-hero__cape .cape-face {
+  width: 20px;
+  height: 32px;
+  border-radius: 2px;
+}
+
+.stats-hero__cape-empty,
+.stats-hero__flame {
+  display: flex;
+  color: var(--text-3);
+}
+
+.stats-hero__cape-empty svg,
+.stats-hero__flame svg { width: 20px; height: 20px; }
+
+.stats-hero__streak.is-lit .stats-hero__flame { color: var(--accent); }
+
+.stats-hero__cape-name,
+.stats-hero__streak-num {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The level: the biggest figure on the page, the bar under it the width of
+   the column. The fill is the accent, flat — nothing here is poured from a
+   gradient — and it has a floor so level 1 with a minute played still shows
+   the bar has started. */
+.stats-hero__level {
+  grid-column: 2;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stats-hero__level-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.stats-hero__level-num {
+  font-size: 48px;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.03em;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-hero__level-next {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-hero__bar {
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.stats-hero__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* The three figures, bare: a figure over its name, a hairline between. They
+   were tiles until 2026-09-17 — boxes in boxes, the same thing that made
+   Profiles feel off. */
+.stats-tiles {
+  grid-column: 2;
+  align-self: end;
+  display: flex;
+  padding-top: var(--space-1);
+}
+
+.stats-tile {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 0 2px 14px;
+  border-left: 1px solid var(--divider);
+}
+
+.stats-tile:first-child { padding-left: 0; border-left: 0; }
+
+.stats-tile__num {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  line-height: var(--leading-tight);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-tile__label { font-size: var(--text-sm); color: var(--text-3); }
+
+/* A cape's outer face, moving, on a canvas the clock in play.js repaints
+   (capeFace) — the game's own picture of it from behind. The pictures are
+   six times the game's size and smooth (2026-09-13), so this is scaled the
+   ordinary way, never pixel for pixel. */
+.cape-face {
+  display: block;
+  image-rendering: auto;
+  border-radius: 3px;
+}
+
+/* The brand line the card wears only while it is being photographed for the
+   clipboard (see copyImage in pages/stats.js): the mark, the name, the site.
+   Off the screen otherwise — the launcher does not sign its own panels. */
+.stats-hero__brand {
+  grid-column: 1 / -1;
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-2);
+}
+
+.stats-hero__brand .brand__mark { width: 22px; height: 22px; }
+
+.stats-hero__brand-site {
+  margin-left: auto;
+  font-weight: var(--weight-regular);
+  color: var(--text-3);
+}
+
+.stats-hero.is-sharing { grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.stats-hero.is-sharing .stats-hero__brand { display: flex; }
+
+/* ---- The Capes card (2026-09-17) -----------------------------------------
+   One cape stands big in it and the rest are rows. The big one is the next
+   to earn (dimmed, "1,971h of play to go", the road under it) or, once all
+   are earned, Yours (lit, worn or not, its colours in the tile). A row that
+   is earned is a button that wears it; the worn one says so in the accent
+   and is marked no other way. */
+.stats-capes-card { gap: var(--space-3); }
+
+.stats-capes {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.stats-cape {
+  display: grid;
+  align-items: center;
+  align-content: center;
+  border-radius: var(--radius-xl);
+  background: var(--surface-1);
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.stats-cape__face { display: flex; }
+
+.stats-cape__name {
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.stats-cape__about { font-size: var(--text-sm); color: var(--text-2); }
+
+.stats-cape__level {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-cape__state {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-cape.is-earned .stats-cape__state { color: var(--confirm); font-weight: var(--weight-medium); }
+.stats-cape.is-worn .stats-cape__state { color: var(--accent); font-weight: var(--weight-semibold); }
+
+/* The big tile: the face at nine pixels a unit down the left, the words
+   beside it, and the road (or the colours) under the words. */
+.stats-cape--big {
+  flex: 1 1 auto;
+  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto;
+  column-gap: var(--space-4);
+  row-gap: 2px;
+  padding: var(--space-3) var(--space-4);
+}
+
+.stats-cape--big .stats-cape__face { grid-column: 1; grid-row: 1 / 5; justify-content: center; }
+.stats-cape--big .stats-cape__face .cape-face { width: 90px; height: 144px; }
+.stats-cape--big:not(.is-earned) .stats-cape__face { opacity: 0.5; }
+.stats-cape--big .stats-cape__name { grid-column: 2; grid-row: 1; font-size: var(--text-xl); }
+.stats-cape--big .stats-cape__about { grid-column: 2; grid-row: 2; }
+.stats-cape--big .stats-cape__level { display: none; }
+.stats-cape--big .stats-cape__state { grid-column: 2; grid-row: 3; margin-top: 4px; }
+.stats-cape--big:not(.is-earned) .stats-cape__state {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-1);
+}
+
+/* Wear / Wearing on the big tile is a button of its own (the tile holds the
+   colour pickers once Yours is earned, so the tile cannot be one). */
+.stats-cape__wear {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.stats-cape__wear:hover { text-decoration: underline; }
+
+.stats-cape__wear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* The road to the next cape: a bar from Level 1 to the cape's level, filled
+   to yours, the two ends written under it. */
+.stats-road {
+  grid-column: 2;
+  grid-row: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: var(--space-2);
+}
+
+.stats-road__track {
+  display: block;
+  position: relative;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.stats-road__fill {
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.stats-road__ends {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-road__ends b { color: var(--text-1); font-weight: var(--weight-semibold); }
+
+/* A row: the face at three pixels a unit, the name over its level, the
+   state at the right. */
+.stats-cape--row {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: var(--space-3);
+  row-gap: 1px;
+  padding: var(--space-2) 14px;
+}
+
+.stats-cape--row .stats-cape__face { grid-column: 1; grid-row: 1 / 3; }
+.stats-cape--row .stats-cape__face .cape-face { width: 28px; height: 45px; }
+.stats-cape--row:not(.is-earned) .stats-cape__face { opacity: 0.5; }
+.stats-cape--row .stats-cape__name { grid-column: 2; grid-row: 1; align-self: end; font-size: var(--text-sm); }
+.stats-cape--row .stats-cape__level { grid-column: 2; grid-row: 2; align-self: start; }
+.stats-cape--row .stats-cape__state { grid-column: 3; grid-row: 1 / 3; }
+
+.stats-cape--row.is-earned { cursor: pointer; }
+.stats-cape--row.is-earned:hover { background: var(--panel-hover); }
+.stats-cape--row.is-earned:active { transform: scale(var(--press-tile)); }
+
+.stats-cape--row.is-earned:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.stats-cape.is-worn { box-shadow: inset 0 0 0 1.5px var(--accent-rim); }
+
+/* Yours' colours, in its tile once it is earned: a row of starting points,
+   then the three pickers and the B. A picker is the browser's own colour
+   field in a capsule of the launcher's. */
+.stats-colours {
+  grid-column: 2;
+  grid-row: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.stats-colours__starts {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.stats-colours__start {
+  width: 30px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 0 0 var(--spec);
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.stats-colours__start:hover { opacity: 1; }
+
+.stats-colours__start:active { transform: scale(var(--press)); }
+
+.stats-colours__start:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.stats-colours__picks {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+}
+
+.stats-colours__pick,
+.stats-colours__letter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.stats-colours__pick input[type="color"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 38px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-pill);
+  background: none;
+  cursor: pointer;
+}
+
+.stats-colours__pick input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+
+.stats-colours__pick input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: var(--radius-pill);
+}
+
+.stats-colours__letter input { accent-color: var(--accent); }
+
+/* More to wear: the third card, across both columns. The tiles are bare —
+   a hairline between them, no tint — the way the figures on the Level card
+   are; the icon sits in a disc of the surface tint so six stroke drawings
+   read as six things and not as a row of glyphs. Nothing in it is a
+   control. */
+.stats-more { grid-column: 1 / -1; }
+
+.stats-shelf { display: flex; }
+
+.stats-shelf__item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 0 2px 16px;
+  border-left: 1px solid var(--divider);
+}
+
+.stats-shelf__item:first-child { padding-left: 0; border-left: 0; }
+
+.stats-shelf__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+
+.stats-shelf__icon svg { display: block; width: 22px; height: 22px; }
+
+.stats-shelf__name { font-weight: var(--weight-semibold); line-height: var(--leading-tight); }
+
+.stats-shelf__sub {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  margin-top: -4px;
+}
+
+/* =========================================================================
+   Worlds (2026-09-11)
+   Three groups, in order: the current profile's worlds, "Your other
+   profiles" (which collapses away when it is empty — the common case for a
+   one-profile install — and includes a leftover profile's worlds, styled
+   `--gone`), and "On this PC, in other launchers". Cards are glass at the
+   same weight as a profile or clip card; the quiet row underneath is the
+   profile editor's own foot (`.quiet-action`), not a new component.
+   ========================================================================= */
+.worlds-group { margin-bottom: var(--space-6); }
+.worlds-group:last-child { margin-bottom: 0; }
+
+.worlds-group__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.worlds-group__title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.worlds-group__note {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.world-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  gap: var(--space-3);
+  align-content: start;
+}
+.world-grid > .empty { grid-column: 1 / -1; }
+
+.world-card {
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  background-color: var(--glass);
+  background-image: var(--sheen);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: var(--panel-ring);
+}
+.world-card:hover { background-color: var(--glass-hover); }
+
+/* A leftover profile's world: still real, still on disk, but there is no
+   profile left to play it — a dashed hairline says "not quite a normal
+   card" without reaching for a second colour. */
+.world-card--gone {
+  border-style: dashed;
+  background-color: var(--panel-quiet);
+}
+.world-card--gone:hover { background-color: var(--glass-quiet-hover); }
+
+.world-card__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.world-card__icon {
+  border-radius: var(--radius-md);
+  width: 64px;
+  height: 64px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background-color: var(--surface-inset);
+  border: var(--edge) solid var(--outline);
+  color: var(--text-3);
+  overflow: hidden;
+}
+img.world-card__icon { object-fit: cover; image-rendering: pixelated; }
+.world-card__icon--placeholder svg { width: 26px; height: 26px; }
+
+.world-card__name { font-size: var(--text-lg); font-weight: var(--weight-bold); }
+.world-card__meta { font-size: var(--text-xs); color: var(--text-3); }
+
+.world-card__facts {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.world-card__line {
+  font-size: var(--text-sm);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.world-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.world-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ---- Restore… — the modal's list of a world's backups ---- */
+.backup-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.backup-row {
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background-color: var(--panel-raised);
+  background-image: var(--sheen-raised);
+}
+.backup-row:hover { background-color: var(--panel-hover); }
+
+.backup-row__date { display: block; font-size: var(--text-md); font-weight: var(--weight-semibold); }
+.backup-row__size {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================================
+   Home — what a Featured server row says under the pointer (2026-09-14)
+   ========================================================================= */
+/* The play glyph at the row's edge, there only while the hand is: the row is
+   a button and until now nothing on it said so before the hover tint. The
+   count steps left to make its room on a transform, so nothing reflows. */
+.partner-row { position: relative; overflow: hidden; }
+
+.partner-row__go {
+  position: absolute;
+  right: var(--space-3);
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+  color: var(--on-accent);
+  opacity: 0;
+  transform: translate(8px, -50%);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.partner-row__go svg { width: 13px; height: 13px; }
+
+.partner-row__count {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.partner-row:hover .partner-row__go,
+.partner-row:focus-visible .partner-row__go {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+.partner-row:hover .partner-row__count,
+.partner-row:focus-visible .partner-row__count {
+  transform: translateX(-36px);
+}
+
+/* A row an offline account cannot join (2026-09-21): no play glyph slides
+   in under the pointer, the count stays where it is, and the address line
+   carries the reason. The row still answers a press — with the sentence. */
+.partner-row.is-locked:hover .partner-row__go,
+.partner-row.is-locked:focus-visible .partner-row__go { opacity: 0; transform: translate(8px, -50%); }
+.partner-row.is-locked:hover .partner-row__count,
+.partner-row.is-locked:focus-visible .partner-row__count { transform: none; }
+.partner-row__lock { display: inline-flex; color: var(--warning); margin-left: 2px; flex: none; }
+.partner-row__lock svg { width: 12px; height: 12px; }
+
+/* =========================================================================
+   Home — Your play before there is any (2026-09-14)
+   ========================================================================= */
+/* A new player used to get one grey sentence in a 180px card. The record is
+   the thing meant to bring anyone back, so its first state shows the ladder
+   itself: Level 1, the empty bar to Level 2, and the first cape as the goal
+   in sight. Nothing on it is a number the launcher did not measure — the
+   ladder is levelOf() in src/main/ledger.js and the cape's level is
+   CAPES in play.js; both are simply read here before any hour exists. */
+.play-first {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.play-first__track {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.play-first__goal {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-1);
+  border: var(--edge) solid var(--border);
+}
+
+.play-first__cape {
+  flex: none;
+  width: 30px;
+  height: 48px;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  border: var(--edge) solid var(--outline);
+  background: var(--surface-inset);
+}
+
+.play-first__cape canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  image-rendering: pixelated;
+}
+
+.play-first__words { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.play-first__name { font-size: var(--text-md); font-weight: var(--weight-semibold); color: var(--text-1); }
+.play-first__line { font-size: var(--text-sm); color: var(--text-3); }
+
+/* An empty page's own action, under its sentence (2026-09-14). */
+.empty__action { margin-top: var(--space-2); }
+
+/* =========================================================================
+   Lit glass (2026-09-17). Adrian, on the whole launcher: "feels a bit dull,
+   for some reason, I dont know why." Seven one-lever mockups later he
+   picked this one — the same glass, lit: a rim of light on every edge of a
+   pane instead of one line along its top, a diagonal sheen across its face,
+   a shade lighter and bluer a tint, and Play glowing. The tint, the sheen,
+   the rim and the shadows are tokens (tokens.css: --glass, --sheen, --rim,
+   --shadow-*); this section is the one place the rim is put on, so that it
+   lands on every CONTAINER and on nothing that is a tint on one. It is the
+   last sheet, so it wins over the plain specular each rule below spelled
+   for itself, and it restates the hover and press states that would
+   otherwise take the rim off again for the length of a press.
+   ========================================================================= */
+.glass,
+.topnav,
+.brand,
+.account-chip,
+.window-controls,
+.side-card,
+.empty,
+.vpick__note,
+.profile-editor,
+.world-card,
+.home__continue,
+.settings__nav,
+.segmented:not(.segmented--tint),
+.profile-pick,
+.profile-pick__caret,
+.skins-open,
+.layout-open,
+.layout-reset {
+  box-shadow: var(--rim), var(--shadow-md);
+}
+
+.card,
+.group,
+.partners {
+  box-shadow: var(--rim), var(--shadow-lg);
+}
+
+/* A block under the hand while Home is being arranged stands a little
+   higher than the ones it passes over. */
+.home.is-arranging .side-card.is-lifting,
+.home.is-arranging .partners.is-lifting {
+  box-shadow: var(--rim), var(--shadow-lg);
+}
+
+.mod-card,
+.profile-card,
+.add-account,
+.clip-card,
+.page-actions .btn:not(.btn--ghost),
+.btn--glass {
+  box-shadow: var(--rim), var(--shadow-sm);
+}
+
+.add-account:hover,
+.clip-card:hover {
+  box-shadow: var(--rim), var(--shadow-md);
+}
+
+.mod-card:active,
+.profile-card:active,
+.add-account:active,
+.clip-card:active,
+.profile-pick:active,
+.profile-pick__caret:active,
+.page-actions .btn:not(.btn--ghost):active:not(:disabled),
+.btn--glass:active:not(:disabled) {
+  box-shadow: var(--rim), var(--shadow-sm);
+}
+
+/* The card the editor shows keeps its own mark — the ring inside its cyan
+   hairline and the halo outside — and wears the rim under it. */
+.profile-card.is-selected,
+.profile-card.is-selected:hover {
+  box-shadow: var(--rim), inset 0 0 0 1px var(--pick-ring), 0 0 0 4px var(--pick-halo);
+}
+
+/* Play: its own sheen over the cyan, a bright top edge, a shade under its
+   bottom edge, and the glow — still the only glow in the launcher. The
+   hover and press keep the sheen; before this the hover rule's
+   background-image replaced it with the flat run. */
+.launch {
+  background-image: var(--sheen-launch), var(--gradient);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.70),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.12),
+    var(--shadow-accent);
+}
+
+.launch:hover:not(:disabled) {
+  background-image: var(--sheen-launch), var(--gradient-hover);
+}
+
+.launch:active:not(:disabled) {
+  background-image: var(--sheen-launch), var(--gradient-press);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.70),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.12);
+}
+
+/* The lit parts inside a card catch a little of the same light: a brighter
+   line along the top of a row, a soft cyan halo on the road to the cape. */
+.partner-row,
+.cont-row__go,
+.play-road {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.22);
+}
+
+.play-road__fill {
+  box-shadow: 0 0 18px rgba(34, 204, 255, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.nameplate {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+/* A switch that is on glows a little, the same cyan halo as the bars. */
+.switch[aria-checked="true"] {
+  box-shadow: 0 0 16px rgba(34, 204, 255, 0.40);
+}
+
+
+/* =========================================================================
+   BACKGROUND — the panel behind Home's Background capsule (2026-09-21)
+
+   The world's tile, the player's own pictures, an Add tile, and the two
+   sliders Settings › General has. A tile is a 16:9 picture with its name
+   under it, on the panel's tint; the pick wears the accent rim the profile
+   card wears; Remove sits in a picture's corner under the pointer.
+   ========================================================================= */
+.backgrounds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.bg-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-lg);
+  background-color: var(--surface-1);
+  border: var(--edge) solid var(--outline);
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.bg-tile:hover { background-color: var(--panel-hover); color: var(--text-1); }
+.bg-tile:active { transform: scale(var(--press-tile)); }
+.bg-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.bg-tile.is-picked {
+  border-color: var(--pick-rim);
+  box-shadow: inset 0 0 0 1px var(--pick-ring), 0 0 0 4px var(--pick-halo);
+  color: var(--text-1);
+}
+
+.bg-tile__picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: calc(var(--radius-lg) - var(--space-2));
+  background-color: var(--surface-2);
+}
+
+.bg-tile__name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  padding: 0 var(--space-1);
+}
+
+.bg-tile--add {
+  justify-content: center;
+  align-items: center;
+  border-style: dashed;
+  color: var(--text-3);
+  min-height: 100px;
+}
+
+.bg-tile--add:hover { color: var(--text-1); }
+.bg-tile__plus svg { width: 22px; height: 22px; }
+
+.bg-tile__remove {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-pill);
+  background-color: var(--glass-deep);
+  color: var(--text-1);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.bg-tile__remove svg { width: 12px; height: 12px; }
+.bg-tile:hover .bg-tile__remove,
+.bg-tile__remove:focus-visible { opacity: 1; }
+.bg-tile__remove:hover { background-color: var(--danger); }
+
+.bg-slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-1) 0;
+}
+
+.bg-slider__name { font-size: var(--text-md); font-weight: var(--weight-semibold); }

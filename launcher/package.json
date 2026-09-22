@@ -1,0 +1,13 @@
+{
+  "name": "beam-launcher",
+  "productName": "BlueClient",
+  "version": "1.11.0",
+  "description": "BlueClient — a fast, focused Minecraft client launcher.",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "author": "BlueClient",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}
