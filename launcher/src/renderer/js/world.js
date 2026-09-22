@@ -2010,8 +2010,10 @@
           var cw = vp[3] * x + vp[7] * y + vp[11] * z + vp[15];
           if (cw <= 0.01) { l.el.style.visibility = 'hidden'; return; }
           // The stylesheet starts a label hidden; only a projected one shows.
-          var px = (cx / cw * 0.5 + 0.5) * canvas.clientWidth;
-          var py = (0.5 - cy / cw * 0.5) * canvas.clientHeight;
+          // The canvas's size as measure() last read it: read here, per
+          // label per frame, it laid the page out in the middle of the frame.
+          var px = (cx / cw * 0.5 + 0.5) * cssWidth;
+          var py = (0.5 - cy / cw * 0.5) * cssHeight;
           l.el.style.visibility = 'visible';
           l.el.style.transform = 'translate(' + Math.round(px) + 'px,' + Math.round(py) + 'px) translate(-50%, -100%)';
         });
