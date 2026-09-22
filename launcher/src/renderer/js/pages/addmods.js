@@ -63,8 +63,9 @@ export function openAddMods(profile, onAdded, { kind = 'mod' } = {}) {
   });
 
   // Laying out thirty rows while the panel is still sliding makes the slide
-  // stutter, so the first search waits for it to land.
-  setTimeout(() => run(profile, '', onAdded, packs), 300);
+  // stutter, so the first search waits for it to land. On the same timer the
+  // typing uses, so a drawer closed before it lands asks Modrinth nothing.
+  searchTimer = setTimeout(() => run(profile, '', onAdded, packs), 300);
   return dismiss;
 }
 
@@ -76,6 +77,8 @@ async function run(profile, query, onAdded, packs) {
   status.textContent = query ? `Searching for “${query}”…` : `Loading popular ${what}…`;
   results.replaceChildren(...Array.from({ length: 4 }, () => el('div', { class: 'catalog-row is-skeleton' })));
 
+  /* A call that throws is an answer too — "Search unavailable" — or the
+     four placeholder rows stood there for as long as the drawer was open. */
   const [response, installed] = await Promise.all([
     host.modrinth.search({
       query,
@@ -85,11 +88,11 @@ async function run(profile, query, onAdded, packs) {
       type: packs ? 'resourcepack' : 'mod'
     }),
     installedMap(profile, packs)
-  ]);
+  ]).catch(() => [null, null]);
 
   if (seq !== requestSeq) return;   // a newer keystroke already won
 
-  if (!response?.ok) {
+  if (!response?.ok || !installed) {
     status.textContent = '';
     results.replaceChildren(el('div', { class: 'empty' }, [
       el('div', { class: 'empty__icon', html: icons.puzzle }),
@@ -152,64 +155,77 @@ function row(hit, profile, installed, onAdded, packs) {
     button.disabled = busy;
   };
 
+  /* One press at a time, mods and packs alike (2026-09-22). The mod path
+     had no busy state: addMod() is a settings write, and the row learns
+     the mod is on only when it returns, so a second click in that moment
+     read "not installed" again and put a second copy of the mod on the
+     profile. And whatever the answer, the button comes back — a write that
+     throws must not leave it on "Adding…" for good. */
   const button = el('button', {
     onClick: async (event) => {
       event.stopPropagation();
-      const current = installed.get(key);
-
-      if (packs) {
-        paint(true);
-        if (current) {
-          const answer = await host.packs.remove(profile.id, current.file);
-          if (answer?.ok) {
-            installed.delete(key);
-            toast(`${hit.name} removed`, 'info');
-          } else {
-            toast(answer?.error || `${hit.name} could not be removed`, 'error');
-          }
-        } else {
-          const answer = await host.packs.add(profile.id, {
-            slug: hit.slug,
-            name: hit.name,
-            author: hit.author,
-            description: hit.description,
-            iconUrl: hit.iconUrl,
-            version: profile.version
-          });
-          if (answer?.ok) {
-            installed.set(key, { file: answer.file });
-            toast(`${hit.name} added — on in ${settingsScopeWords(profile.id)}`, 'success');
-          } else {
-            toast(answer?.error || `${hit.name} could not be added`, 'error');
-          }
-        }
+      if (button.disabled) return;
+      paint(true);
+      try {
+        await press();
+      } catch {
+        toast(`${hit.name} could not be changed`, 'error');
+      } finally {
         paint();
-        onAdded?.();
-        return;
       }
-
-      if (current) {
-        await removeMod(profile.id, current.id);
-        installed.delete(key);
-        toast(`${hit.name} removed from ${profile.name}`, 'info');
-      } else {
-        const entry = await addMod(profile.id, {
-          name: hit.name,
-          author: hit.author,
-          version: hit.latestVersion || '1.0.0',
-          description: hit.description,
-          source: 'modrinth',
-          slug: hit.slug,
-          iconUrl: hit.iconUrl
-        });
-        if (entry) installed.set(key, entry);
-        toast(`${hit.name} added to ${profile.name}`, 'success');
-      }
-
-      paint();
       onAdded?.();
     }
   });
+
+  async function press() {
+    const current = installed.get(key);
+
+    if (packs) {
+      if (current) {
+        const answer = await host.packs.remove(profile.id, current.file);
+        if (answer?.ok) {
+          installed.delete(key);
+          toast(`${hit.name} removed`, 'info');
+        } else {
+          toast(answer?.error || `${hit.name} could not be removed`, 'error');
+        }
+      } else {
+        const answer = await host.packs.add(profile.id, {
+          slug: hit.slug,
+          name: hit.name,
+          author: hit.author,
+          description: hit.description,
+          iconUrl: hit.iconUrl,
+          version: profile.version
+        });
+        if (answer?.ok) {
+          installed.set(key, { file: answer.file });
+          toast(`${hit.name} added — on in ${settingsScopeWords(profile.id)}`, 'success');
+        } else {
+          toast(answer?.error || `${hit.name} could not be added`, 'error');
+        }
+      }
+      return;
+    }
+
+    if (current) {
+      await removeMod(profile.id, current.id);
+      installed.delete(key);
+      toast(`${hit.name} removed from ${profile.name}`, 'info');
+    } else {
+      const entry = await addMod(profile.id, {
+        name: hit.name,
+        author: hit.author,
+        version: hit.latestVersion || '1.0.0',
+        description: hit.description,
+        source: 'modrinth',
+        slug: hit.slug,
+        iconUrl: hit.iconUrl
+      });
+      if (entry) installed.set(key, entry);
+      toast(`${hit.name} added to ${profile.name}`, 'success');
+    }
+  }
   paint();
 
   return el('article', { class: 'catalog-row' }, [

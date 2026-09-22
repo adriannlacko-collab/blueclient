@@ -63,7 +63,9 @@ const ACCOUNT_HOSTS = ['hypixel.net', 'donutsmp.net', '2b2t.org', 'mineplex.com'
 export function needsAccount(server) {
   if (!server) return false;
   if (server.account === true) return true;
-  const host = String(server.address || '').toLowerCase().replace(/:d+$/, '');
+  // `\d`, not `d` (2026-09-22): the port never came off, so an address
+  // written with one — mc.hypixel.net:25565 — matched no host here.
+  const host = String(server.address || '').toLowerCase().replace(/:\d+$/, '');
   return ACCOUNT_HOSTS.some((h) => host === h || host.endsWith('.' + h));
 }
 

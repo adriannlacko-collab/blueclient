@@ -556,15 +556,36 @@ function yielding() {
 }
 
 window.addEventListener('focus', () => {
+  // The clocks first: they stood still while the game had the window.
+  if (refs.list?.isConnected) startClocks();
   if (!refs.friendsCard?.isConnected) return;   // Home is not the page on screen
   refreshPartners();
   syncFriends();
 });
 
+/**
+ * The running rows' clocks, once a second while Home is on screen — and
+ * stopped, not skipped, while the game has the window (2026-09-22), the
+ * cape clock's rule in play.js: a row's time is a text change on glass,
+ * and behind a four-hour game that was a repaint of the launcher's glass
+ * every second on the card the game is drawing with, for a clock nobody
+ * could see. The focus listener above starts it again, and the first tick
+ * is at once, so the time is right the moment the launcher is looked at.
+ */
+function startClocks() {
+  clearInterval(timerHandle);
+  timerHandle = null;
+  paintClocks();
+  if (yielding()) return;
+  timerHandle = setInterval(() => {
+    if (yielding()) { clearInterval(timerHandle); timerHandle = null; return; }
+    paintClocks();
+  }, 1000);
+}
+
 /** Keeps the session clocks ticking while this page is on screen. */
 export function mounted() {
-  clearInterval(timerHandle);
-  timerHandle = setInterval(paintClocks, 1000);
+  startClocks();
 
   clearInterval(partnerTimer);
   refreshPartners();

@@ -147,6 +147,15 @@ function performanceStack() {
 /* ------------------------------------------------------------------ init */
 
 export async function initState() {
+  /* Every question the first paint needs goes to main at once (2026-09-22).
+     The running games and the sync groups were asked one after the other,
+     after the settings and after every write below — two more round trips
+     in a row before Home could paint, on a main process that is at its
+     busiest while the window opens. Neither depends on anything here. A
+     failed answer is an empty one: a window that cannot list its games
+     still has to open. */
+  const running = Promise.resolve().then(() => host.game.sessions()).catch(() => []);
+  const groups = Promise.resolve().then(() => host.settings.groups()).catch(() => null);
   const [settings, system] = await Promise.all([host.settings.get(), host.system.info()]);
 
   state.settings = settings;
@@ -186,8 +195,8 @@ export async function initState() {
 
   // Games survive a reload of this window, so the rows are rebuilt from what
   // the host says is actually running rather than assumed to be nothing.
-  state.sessions = (await host.game.sessions()) || [];
-  state.settingsGroups = (await host.settings.groups().catch(() => null)) || {};
+  state.sessions = (await running) || [];
+  state.settingsGroups = (await groups) || {};
 
   state.ready = true;
   notify('ready');
@@ -353,7 +362,17 @@ export async function resetSettings() {
   const fresh = await host.settings.reset();
   state.settings = fresh;
   applyTheme('dark');
-  await persist({ profiles: state.profiles });
+  /* The accounts go back in with the profiles (2026-09-22). Main's reset is
+     the whole file back to its defaults — `accounts` included — and only the
+     profiles were written back, so the list stayed in this window's memory
+     and was gone from the disk: the next start opened on "Add account", with
+     the Microsoft sign-in to do again, under a button that says "Profiles,
+     mods and accounts are kept". Which profile launches is kept with them. */
+  await persist({
+    profiles: state.profiles,
+    accounts: { list: state.accounts, active: state.activeAccountId },
+    game: { lastProfile: state.activeProfileId }
+  });
   // A distinct reason: the settings page skips plain 'settings' notifications
   // (its own controls are already up to date), but a reset changes every
   // value at once and does need a full rebuild.
