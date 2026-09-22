@@ -40,12 +40,17 @@
  *   { "version": "0.3.0", "url": "https://…/releases/latest/download/…", "notes": "" }
  */
 
-const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { app } = require('electron');
 const { USER_AGENT } = require('./version');
+
+/* `https` is asked for at the first request rather than here (2026-09-22):
+   main reads this file before Electron's ready, for applyStagedAtStart, and
+   loading Node's TLS stack was the largest single require in that stretch —
+   about 6 ms of a start that has nothing to fetch until the window is up. */
+const https = () => require('https');
 
 /**
  * What the updater did, on disk, because nothing else records it.
@@ -144,7 +149,7 @@ function set(patch) {
  */
 function fetchJson(url, { limit = 64 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
-    const request = https.get(url, {
+    const request = https().get(url, {
       headers: { 'user-agent': USER_AGENT, accept: 'application/json' },
       timeout: 6000
     }, (response) => {
@@ -740,7 +745,7 @@ function download(url, dest, onProgress, depth = 0) {
     // A socket that goes quiet mid-download used to hold the corner at the same
     // percent for ever (2026-09-16): no bytes for a minute is a dead download,
     // and the next 20-minute check starts it again from nothing.
-    const request = https.get(url, { headers: { 'user-agent': USER_AGENT }, timeout: 60_000 }, (response) => {
+    const request = https().get(url, { headers: { 'user-agent': USER_AGENT }, timeout: 60_000 }, (response) => {
       if ([301, 302, 307, 308].includes(response.statusCode) && response.headers.location) {
         response.resume();
         return download(new URL(response.headers.location, url).toString(), dest, onProgress, depth + 1)

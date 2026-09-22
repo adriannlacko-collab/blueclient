@@ -39,8 +39,6 @@
  * prove — see `tools/check-crash-report.js`.
  */
 
-const https = require('https');
-const http = require('http');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
@@ -196,7 +194,10 @@ function post(url, body) {
     };
 
     try {
-      const client = /^https:/i.test(url) ? https : http;
+      // Required here, at the first send, rather than at the top: main reads
+      // this file before Electron's ready, and the TLS stack is not needed
+      // until the window is up (2026-09-22, as in update.js).
+      const client = /^https:/i.test(url) ? require('https') : require('http');
       const request = client.request(url, {
         method: 'POST',
         headers: {

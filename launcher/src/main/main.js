@@ -7,6 +7,22 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 
+/* Node's compile cache, before the thirty-odd modules below are read
+   (2026-09-22). Every start compiled the whole of main's JavaScript again
+   from source — Chromium keeps a code cache for the page, and nothing kept
+   one for main — and all of it happens before Electron's ready, so before
+   the window can even be asked for. With the cache, V8 is handed the code it
+   made last time: measured under Xvfb, the requires below went from about
+   40 ms to about 25. It is keyed on each file's own contents, so a new
+   app.asar simply compiles once and is cached again; a folder that cannot be
+   written leaves it off and changes nothing else. Beside the settings, where
+   an update's swap never reaches. */
+try {
+  require('module').enableCompileCache?.(path.join(app.getPath('userData'), 'compile-cache'));
+} catch {
+  /* A start without a cache is only a slower start. */
+}
+
 const { Store, defaults, suggestedMemory, migrateToSeven } = require('./store');
 const { Launcher } = require('./launcher');
 const install = require('./game/install');
