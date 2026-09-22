@@ -46,6 +46,18 @@ async function get(url) {
   }
 }
 
+/**
+ * What a failed ask says (2026-09-22): the connection's failures — no
+ * route, a name that does not resolve, our own clock running out — as the
+ * one sentence search already used, rather than Node's "fetch failed" or
+ * "This operation was aborted" in the list of mods a launch left out.
+ */
+function failure(error) {
+  const text = String((error && error.message) || error);
+  const offline = (error && error.name === 'AbortError') || /fetch failed|terminated|aborted|ENOTFOUND|EAI_AGAIN|ECONN/i.test(text);
+  return offline ? 'Could not reach Modrinth' : text;
+}
+
 /** A response read to its end, shaped like one. */
 async function buffered(res) {
   const bytes = Buffer.from(await res.arrayBuffer());
@@ -187,7 +199,7 @@ async function builds({ slug, version, loader }) {
     described.sort((a, b) => (CHANNEL[a.type] ?? 1) - (CHANNEL[b.type] ?? 1));
     return { ok: true, builds: described };
   } catch (error) {
-    return { ok: false, error: String(error.message || error) };
+    return { ok: false, error: failure(error) };
   }
 }
 
@@ -231,7 +243,7 @@ async function build(id) {
     if (!found) return { ok: false, error: 'That build has no downloadable file.' };
     return { ok: true, ...found };
   } catch (error) {
-    return { ok: false, error: String(error.message || error) };
+    return { ok: false, error: failure(error) };
   }
 }
 
@@ -288,7 +300,7 @@ async function byHashes(hashes) {
     }
     return { ok: true, versions };
   } catch (error) {
-    return { ok: false, error: String(error.message || error) };
+    return { ok: false, error: failure(error) };
   }
 }
 
@@ -307,7 +319,7 @@ async function projects(ids) {
     }
     return { ok: true, projects: out };
   } catch (error) {
-    return { ok: false, error: String(error.message || error) };
+    return { ok: false, error: failure(error) };
   }
 }
 

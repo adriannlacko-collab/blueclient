@@ -81,7 +81,27 @@ async function fetchBuffer(url, { timeout = 60000 } = {}) {
       clearTimeout(timer);
     }
   }
-  throw lastError;
+  throw unreachable(lastError, url);
+}
+
+/**
+ * A server that could not be reached, said as that (2026-09-22).
+ *
+ * Node's fetch reports no connection, a name that does not resolve and a
+ * connection dropped mid-answer alike as a TypeError, "fetch failed" (or
+ * "terminated"), and a TypeError is what Session._explain takes for a fault
+ * in the launcher's own code: a player pressing Play offline for the first
+ * time was told "Something went wrong while reading version data — fetch
+ * failed. It is written to launcher-errors.log", and the log got a stack
+ * for a cable. The original stays as the `cause`.
+ */
+function unreachable(error, url) {
+  if (!(error instanceof TypeError) || !/^(?:fetch failed|terminated)$/.test(String(error.message))) return error;
+  let host = 'the server';
+  try { host = new URL(url).host; } catch { /* keep the words */ }
+  const plain = new Error(`Could not reach ${host}`);
+  plain.cause = error;
+  return plain;
 }
 
 async function fetchJson(url) {
@@ -192,7 +212,7 @@ async function fetchInto(url, file, expected, size, { onBytes, stallMs = STALL_M
       await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
     }
   }
-  throw lastError;
+  throw unreachable(lastError, url);
 }
 
 /**

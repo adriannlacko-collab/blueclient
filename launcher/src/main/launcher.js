@@ -167,6 +167,11 @@ class Session extends EventEmitter {
     if (/^The download of .+ stalled$/.test(text)) {
       return `${text} — check the connection and press Play again; it carries on from where it stopped.`;
     }
+    // A server the pipeline could not reach at all (game/files.js,
+    // `unreachable`, 2026-09-22) — the connection's, not the launcher's.
+    if (/^Could not reach \S+$/.test(text)) {
+      return `${text} — check the connection and press Play again.`;
+    }
     const fault = error instanceof TypeError || error instanceof RangeError || error instanceof ReferenceError
       || /^The "\w+" argument must be/.test(text) || /ERR_INVALID_ARG/.test(String(error && error.code || ''));
     if (!fault) return text;
