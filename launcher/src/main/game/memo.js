@@ -171,7 +171,7 @@ async function remember(key, maxAgeMs, work, options) {
     if (old !== undefined) {
       const job = refresh(key, work);
       const grace = Number(options.graceMs) || 0;
-      if (grace > 0 && await Promise.race([job.then(() => true), after(grace)])) {
+      if (grace > 0 && await within(job, grace)) {
         const now = stale(key);
         if (now !== undefined) return now;
       }
@@ -198,8 +198,28 @@ function refresh(key, work) {
   const promise = (async () => {
     try { set(key, await work()); } catch { /* the remembered answer stands */ }
   })().finally(() => { inFlight.delete(key); });
+  promise.startedAt = Date.now();
   inFlight.set(key, promise);
   return promise;
 }
 
-module.exports = { init, get, set, stale, due, remember, refresh };
+/**
+ * True when a renewal from `refresh` lands within `graceMs` of when it
+ * STARTED, false as soon as that has passed (2026-09-22).
+ *
+ * The grace used to run from each caller's own ask: a press that set its
+ * renewals going at the start (Session._run) and then met them one stage
+ * at a time waited the whole grace at every stage that found its renewal
+ * still out — offline, where a failed fetch retries for a second and a
+ * half, that was the Fabric stage's 0.7 s and then the Java stage's 0.7 s
+ * again (1.4 s measured, press to JVM). Counted from the start, every
+ * renewal a press waits on runs out at the same moment, and one that has
+ * been out since a `prime` beat minutes ago is not waited for at all.
+ */
+async function within(job, graceMs) {
+  const left = Number(graceMs) - (Date.now() - (job.startedAt || Date.now()));
+  if (!(left > 0)) return false;
+  return Promise.race([job.then(() => true), after(left)]);
+}
+
+module.exports = { init, get, set, stale, due, remember, refresh, within };

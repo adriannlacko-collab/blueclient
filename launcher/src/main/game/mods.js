@@ -51,14 +51,6 @@ const LOOKUP_TTL_MS = 6 * 60 * 60 * 1000;
  */
 const LOOKUP_GRACE_MS = 700;
 
-/** False after the grace, never holding the process open. */
-function grace() {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), LOOKUP_GRACE_MS);
-    if (timer.unref) timer.unref();
-  });
-}
-
 /**
  * How long a settled pairing is kept (2026-09-11).
  *
@@ -117,7 +109,9 @@ async function resolveFile(slug, name, version, loader) {
     // A Modrinth answering at its usual speed still decides this launch, so
     // a newer build lands on the press after it is published, as it always
     // did; one that is slow tonight finishes behind the player.
-    const raced = await Promise.race([job.then(() => true), grace()]);
+    // The grace runs from when the renewal started (memo.within), which for
+    // a press is the moment it began (Session._run's prefetch).
+    const raced = await memo.within(job, LOOKUP_GRACE_MS);
     const now = raced ? memo.stale(key) : null;
     return shaped(now && now.id ? now : old);
   }
