@@ -463,6 +463,25 @@ class Session extends EventEmitter {
     // with Fabric's class loader in the way. The runtime's base archive
     // (install.archiveClasses) stays; it measured neutral on the game and
     // costs nothing at the press.
+    //
+    // And Java 25's AOT cache, measured the same way (2026-09-23,
+    // tools/bench/README.md, "AOT cache"): the real thing. A cache trained on
+    // one launch of 26.3 took every later launch 20–27% sooner to the title
+    // screen and 18–21% sooner into the world, round after round, at either
+    // heap size. But the training is the 2026-09-10 story again — recording
+    // (-XX:AOTMode=record, or the one-step -XX:AOTCacheOutput) took that
+    // launch from 18 seconds to the title to 183–205, on Mojang's 25.0.1 and on
+    // Adoptium's 25.0.4 alike, and assembling the cache after it is another
+    // three minutes of one core; Java 21's dynamic archive trained in 218
+    // seconds for 13%. A cache has to be trained again every time a library
+    // on the classpath changes — each Fabric Loader release — and a cache
+    // trained on a windowless program that loads the same library classes
+    // saved 1%, so the three minutes cannot be moved out of a real game.
+    // Worse, the 25.0.1 Mojang ships does not check the cache against the
+    // classpath at all: a cache trained on one jar ran that jar's old classes
+    // after the jar was replaced (25.0.4 refuses the stale cache, as it
+    // should), so the launcher would have to key and drop the cache itself.
+    // Not until recording costs seconds rather than minutes.
     // The card Windows will draw this Java on, settled before it starts
     // (game/gpu.js, 2026-09-20): one registry read per runtime per launcher
     // run, and a write only the first time a runtime is ever launched.
