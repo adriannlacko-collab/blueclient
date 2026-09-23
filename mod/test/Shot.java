@@ -9,8 +9,8 @@ import javax.imageio.ImageIO;
 /**
  * Screenshot of the X display the game runs on (java.awt.Robot through XTest),
  * optionally after pressing keys: `java Shot.java out.png [key ...]` where a
- * key is F1..F12, ESC, TAB or a single letter, `click:x,y` a left click and
- * `wait:ms` a pause. Run with DISPLAY set.
+ * key is F1..F12, ESC, TAB or a single letter, `hold:KEY:ms` a key held that
+ * long, `click:x,y` a left click and `wait:ms` a pause. Run with DISPLAY set.
  */
 public class Shot {
    public static void main(String[] args) throws Exception {
@@ -23,6 +23,15 @@ public class Shot {
             robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             robot.delay(80);
             robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+            robot.delay(400);
+            continue;
+         }
+         if (args[i].startsWith("hold:")) {
+            String[] key = args[i].substring(5).split(":");
+            int code = code(key[0]);
+            robot.keyPress(code);
+            robot.delay(Integer.parseInt(key[1]));
+            robot.keyRelease(code);
             robot.delay(400);
             continue;
          }

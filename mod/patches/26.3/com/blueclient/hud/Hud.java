@@ -27,6 +27,7 @@ import com.blueclient.hud.modules.FpsModule;
 import com.blueclient.hud.modules.FreelookModule;
 import com.blueclient.hud.modules.FullbrightModule;
 import com.blueclient.hud.modules.HealthIndicatorsModule;
+import com.blueclient.hud.modules.HotkeysModule;
 import com.blueclient.hud.modules.HurtCamModule;
 import com.blueclient.hud.modules.KeystrokesModule;
 import com.blueclient.hud.modules.LightModule;
@@ -116,6 +117,7 @@ public final class Hud {
       MODULES.add(new WaypointsModule());
       MODULES.add(new SprintModule());
       MODULES.add(new ClippingModule());
+      MODULES.add(new HotkeysModule());
       MODULES.add(new BadgeModule());
       MODULES.add(new MusicModule());
       MODULES.add(new HurtCamModule());

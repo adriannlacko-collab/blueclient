@@ -6,8 +6,10 @@ verbatim and only the headers around it are rewritten, with the
 data-descriptor bit cleared because the sizes are now known up front.
 Replaced entries keep their position; brand-new entries (a nested class the
 patched source needs that the original did not have) go right after their
-outer class. Nested classes of a patched outer class that the new compile no
-longer produces are dropped, since they belong to the old outer class.
+outer class, and brand-new top-level classes (with their nested classes) go
+after the last class of their package. Nested classes of a patched outer
+class that the new compile no longer produces are dropped, since they belong
+to the old outer class.
 """
 
 import struct
@@ -133,8 +135,24 @@ def patch(original, output, classes):
                         report["added"].append(n)
             continue
         result.append(e)
+    # brand-new top-level classes: after the last class in the same package
+    known = {e.name for e in entries}
+    for outer in sorted(o for o in by_outer_new if o + ".class" not in known):
+        names = sorted((n for n in by_outer_new[outer] if n not in placed), key=lambda n: (n != outer + ".class", n))
+        if outer + ".class" not in names:
+            raise ValueError(f"nested classes without their outer class: {names}")
+        package = outer.rsplit("/", 1)[0] + "/"
+        at = len(result)
+        for i, e in enumerate(result):
+            if e.name.startswith(package) and e.name.endswith(".class") and "/" not in e.name[len(package):]:
+                at = i + 1
+        for n in names:
+            result.insert(at, _fresh(n, classes[n]))
+            at += 1
+            placed.add(n)
+            report["added"].append(n)
     missing = [n for n in classes if n not in placed]
     if missing:
-        raise ValueError(f"patched classes whose outer class is not in the jar: {missing}")
+        raise ValueError(f"patched classes that could not be placed: {missing}")
     write(output, result)
     return report

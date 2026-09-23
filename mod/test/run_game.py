@@ -144,7 +144,7 @@ def blueclient_config(scoreboard_pos, defaults=False):
     }
 
 
-def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults=False, modules=None):
+def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults=False, modules=None, files=None):
     shutil.rmtree(run_dir, ignore_errors=True)
     (run_dir / "mods").mkdir(parents=True)
     (run_dir / "config").mkdir()
@@ -166,6 +166,10 @@ def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults=False,
         "onboardAccessibility:false", "skipMultiplayerWarning:true", "tutorialStep:none",
         "joinedFirstServer:true", "pauseOnLostFocus:false", "renderDistance:4", "simulationDistance:5",
         "guiScale:2", "narrator:0", "soundCategory_master:0.0", "fullscreen:false", ""]))
+    for spec in files or []:
+        dest, src = spec.split("=", 1)
+        (run_dir / dest).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, run_dir / dest)
 
 
 def classpath(mc):
@@ -241,9 +245,9 @@ def record(mc, game, run_dir, seconds):
 
 
 def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0, defaults=False, modules=None,
-        quit_at=None):
+        quit_at=None, files=None, shots=None):
     run_dir = MOD / "run" / f"{mc}-{label}"
-    lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults, modules)
+    lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults, modules, files)
     xvfb, display = start_xvfb()
     env = clean_env()
     env.update({"DISPLAY": display, "LIBGL_ALWAYS_SOFTWARE": "1", "GALLIUM_DRIVER": "llvmpipe"})
@@ -287,6 +291,10 @@ def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0,
                 print(f"[game] recording {jfr}s with JFR", flush=True)
                 record(mc, game, run_dir, jfr)
             screenshot(display, run_dir / "screen-world.png")
+            for shot in shots or []:
+                # "name=step step ...": Shot.java's keys, hold:KEY:ms, click:x,y and wait:ms, then a screenshot
+                name, _, steps = shot.partition("=")
+                screenshot(display, run_dir / f"screen-{name}.png", *steps.split())
             screenshot(display, run_dir / "screen-tab.png", "TAB")
             screenshot(display, run_dir / "screen-menu.png", "ESC", "wait:1500")
             if quit_at:
@@ -340,12 +348,17 @@ def main():
     ap.add_argument("--jfr", type=int, default=0, help="after --seconds, record this many seconds with JFR (alloc.jfr)")
     ap.add_argument("--defaults", action="store_true", help="leave every module at its default (a fresh install)")
     ap.add_argument("--modules", default=None, help='JSON of module switches on top, e.g. {"colour_saturation": true}')
+    ap.add_argument("--file", action="append", default=[], metavar="DEST=SRC",
+                    help="copy SRC into the game folder at DEST (e.g. config/blueclient-hotkeys.json=h.json)")
+    ap.add_argument("--shot", action="append", default=[], metavar="NAME=STEPS",
+                    help="after the world screenshot: press/click/wait (Shot.java steps, space-separated), "
+                         "then save screen-NAME.png; repeatable, in order")
     args = ap.parse_args()
     jars = deps.bundle() if args.original else Path(args.jars)
     label = args.label or ("original" if args.original else "patched")
     pos = json.loads(args.scoreboard_pos) if args.scoreboard_pos else None
     ok = run(args.mc, jars, label, args.seconds, pos, args.config, args.keep, args.jfr, args.defaults, args.modules,
-             args.quit_at)
+             args.quit_at, args.file, args.shot)
     sys.exit(0 if ok else 1)
 
 
