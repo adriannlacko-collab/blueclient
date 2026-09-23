@@ -15,7 +15,8 @@ rebuilding the mod from decompiled code.
 * `build.py` / `build.sh` — reproduce the patched jars.
 * `test/run_game.py` — start the real game headless on a patched jar.
 * `tools/` — downloads/caching (`deps.py`), the jar rewriter (`jarpatch.py`),
-  the javap comparison (`javapdiff.py`, `methoddiff.py`, `recompile_diff.py`).
+  the javap comparison (`javapdiff.py`, `methoddiff.py`, `recompile_diff.py`),
+  the JFR allocation summary (`jfr_alloc.py` → `JfrAlloc.java`).
 
 ## Build
 
@@ -64,7 +65,24 @@ For each version:
      decompiling and recompiling alone moves. The report classifies each
      member as *branch layout only* (same instruction multiset, jumps and
      locals renumbered) or *lambda only renumbered*; anything else is listed
-     as `review:` (none are, for the patches here);
+     as `review:`. The ones the current patches show were each read and are
+     compiler/decompiler artifacts, not behaviour:
+     - `Objects.requireNonNull(font)` + constant `9`: the original source read
+       the compile-time constant `Font.lineHeight` through `client.font`, which
+       javac compiles to a null check and the constant; the decompile has the
+       constant only (`BossBarModule.height/drawnBars`,
+       `WaypointsModule.label`), and folds `-(9/2) - 7`-style expressions;
+     - string `switch` with one more temporary local
+       (`WaypointsModule.dimension*`), several `return`s merged into one or
+       split (`NoFogModule.keep`, `WaypointsModule.label`);
+     - `try`-with-resources rebuilt as explicit `try/catch/close`
+       (`CapeFrames.pixels`);
+     - 1.2x only: an enum `switch`'s synthetic `$SwitchMap$…` field is named
+       after the class name the original was compiled against
+       (`…$world$level$material$FogType`) and after the intermediary name when
+       recompiled (`…$class_5636`); the field is private to `Fogs$1`, which is
+       replaced together with `Fogs`, so both sides agree.
+     `tools/methoddiff.py A.class B.class [member]` shows any one of them;
    * every entry that was not patched is byte-for-byte identical, or the build
      fails.
 
@@ -102,12 +120,113 @@ the sandbox proxy settings are not passed, so it can reach nothing on the
 network. 26.x needs `test/glxshim.c` (built automatically) under Xvfb: SDL3
 asks GLX for an sRGB visual Xvfb does not have.
 
-## Verification done (2026-09-22)
+Options: `--jars DIR` (jars to test; default `launcher/resources/mod`),
+`--original` (the released jars), `--label` (run folder name), `--seconds`
+(time in the world), `--modules '{"shaders": true, …}'` (module switches on
+top of the test config), `--defaults` (no module switched on or off: what a
+fresh install runs; the waypoint is still there), `--scoreboard-pos`,
+`--config` (extra `blueclient.json` keys), `--keep` (leave the game folder),
+`--quit-at X,Y` (click *Save and Quit to Title* on the pause menu at the end,
+so BlueClient's frame clock logs `Frames: … median … fps, 1% low …`), and
+`--jfr N` (below).
 
-`python3 mod/build.py` built all ten jars. For every patched class, the
-`recompile:` report showed that the released class and its decompiled source
-recompiled differ only in branch layout and lambda numbering (no `review:`
-lines). Every unpatched entry was byte-identical.
+### Allocation measurement (JFR)
+
+    python3 mod/test/run_game.py 26.3 --original --label ab-original --defaults --seconds 60 --jfr 60 --quit-at 640,455
+    python3 mod/test/run_game.py 26.3 --jars <patched> --label ab-patched --defaults --seconds 60 --jfr 60 --quit-at 640,455
+    python3 mod/tools/jfr_alloc.py mod/run/26.3-ab-original/alloc.jfr
+
+`--jfr N` starts the game with 16 KB fixed-size TLABs
+(`-XX:TLABSize=16k -XX:-ResizeTLAB`), waits until it has rendered the world
+for `--seconds`, and records N seconds with `jcmd JFR.start` using JDK 25's
+*profile* settings with every `ObjectAllocationInNewTLAB`/`OutsideTLAB` event
+kept (so one event with a stack per 16 KB a thread allocates, not a few
+samples a second). `tools/jfr_alloc.py` (→ `tools/JfrAlloc.java`, streamed)
+prints the render thread's exact allocation rate (from
+`jdk.ThreadAllocationStatistics` at the start and end) and the share of the
+TLAB events whose stack has a `com.blueclient` frame, grouped by the innermost
+one. The scene is fixed (same world, spawn, view, one waypoint beam, 20-line
+sidebar), but llvmpipe renders it at ~5–10 fps, so per-frame costs weigh less
+than on real hardware and per-tick ones (20 a second) weigh more.
+
+## Verification done (2026-09-22/23)
+
+`python3 mod/build.py` built all ten jars (24–30 classes replaced per jar,
+`Gl$Game` and `Gl$Packing` added). Every unpatched entry was byte-identical;
+every `recompile:` difference is branch layout, lambda numbering or one of
+the artifacts listed above. The build into `launcher/resources/mod` is
+byte-identical to the scratch build the runs below used (sha1 of
+`blueclient-26.3.jar`: `cf51f5e270902742785098f27a72be5f874ab432`).
+
+### Second pass: all ten versions in the game
+
+Each version with the final jars, the test config plus Colour Saturation,
+the Shaders switch and Fog distance on, 45 s in the world, then the tab list
+and the pause menu:
+
+| version | joined | mixin / linkage errors | HUD (FPS, ping, coords, clock, keystrokes, sidebar, beam) | GL state proof (U1) |
+|---|---|---|---|---|
+| 1.20.6 | yes | 0 | drawn | Saturate, Shade |
+| 1.21.1 | yes | 0 | drawn | Saturate, Shade |
+| 1.21.4 | yes | 0 | drawn | Saturate, Shade |
+| 1.21.5 | yes | 0 | drawn | Saturate, Shade |
+| 1.21.8 | yes | 0 | drawn | Saturate, Shade |
+| 1.21.10 | yes | 0 | drawn | Saturate, Shade |
+| 1.21.11 | yes | 0 | drawn | Saturate, Shade |
+| 26.1.2 | yes | 0 | drawn | Saturate, Shade |
+| 26.2 | yes | 0 | drawn | Saturate (Shade does not run, U13) |
+| 26.3 | yes | 0 | drawn | Saturate (Shade does not run, U13) |
+
+"GL state proof" = the log line `GL state for com.blueclient.shade.<pass> is
+now restored from the game's own copy, without reading it back`, i.e. 8
+passes read back from the driver matched the game's record; no version
+logged a mismatch or a missing field. Where it runs (1.20.6–26.1.2) the
+shader stage then turns itself off after ~20 s because llvmpipe needs >100 ms a frame for
+it (its own rule, as in the released jar). The error lines in the logs
+(13–27 per run) are all from the sandbox: no Mojang services or Realms (no
+network), no OpenAL device, no narrator library, no window icon.
+
+The seven versions not started in the first pass (1.20.6, 1.21.1, 1.21.4,
+1.21.5, 1.21.8, 1.21.10, 26.1.2) were also started early in the second
+pass, before its changes: all joined with 0 mixin/linkage errors and drew
+the HUD.
+
+### Allocation A/B (JFR)
+
+Released jar vs final jar, same scene, fresh-install module defaults, 60 s
+in the world then 60 s recorded (see "Allocation measurement" above). Render
+thread only; "BlueClient" = allocation whose stack has a `com.blueclient`
+frame (including game code it calls):
+
+| version | jar | render thread MB/s | BlueClient MB/s | BlueClient share | median fps (session) |
+|---|---|---|---|---|---|
+| 26.3 | released | 5.82 | 0.183 | 3.0 % | 6.3 |
+| 26.3 | patched | 6.04 | 0.115 | 1.8 % | 7.0 |
+| 1.20.6 | released | 4.01 | 0.166 | 4.0 % | 7.8 |
+| 1.20.6 | patched | 3.79 | 0.124 | 3.2 % | 7.8 |
+| 1.21.11 | released | 6.08 | 0.101 | 1.6 % | 4.8 |
+| 1.21.11 | patched | 6.77 | 0.114 | 1.6 % | 6.0 |
+
+* 26.3: −37 % BlueClient allocation. Gone from the profile: the world-pass
+  recording lambdas (`Frames$Recording`, F6), `Inputs.keyDown` (F8),
+  `Fogs.where` (F7).
+* 1.20.6: −25 % at the same frame rate. Gone: `Fogs.where` (0.74 MB of 9.9),
+  `WaypointsModule.label`'s width (U5).
+* 1.21.11: no drop per second (0.21 MB of `Fogs.where` gone, but the patched
+  run drew 25 % more frames and most of what is left is per frame);
+  per frame (by the session's median fps) it is roughly 21 KB → 19 KB.
+* The total render-thread rate is the game's and moves with the frame rate;
+  BlueClient is 2–4 % of it. What is left is mostly the game's own text
+  drawing for the HUD chips and `ScoreboardModule.measure` (once a tick at
+  most, which at these frame rates is every frame) — see U14.
+* The fixes for the badge (U4), boss bar (U6), box outlines (U12) and
+  skins/capes (U8) act on things this scene does not have (other BlueClient
+  players, a boss, block waypoints, other players' skins), so the table
+  does not show them. The GL-state fix (U1) removes driver round trips, not
+  allocation; llvmpipe runs GL on the calling thread, so it cannot show the
+  stall either.
+
+### First pass
 
 In the real game (Xvfb + llvmpipe, Fabric Loader 0.19.5, the newest Fabric
 API for each version, offline, `--quickPlaySingleplayer`):
@@ -121,7 +240,7 @@ API for each version, offline, `--quickPlaySingleplayer`):
 | 26.3 | released + `"fps.pos": ["x", 0.1]`, `"coords.scale": "big"` | does not start: `Could not execute entrypoint stage 'client'` … `NumberFormatException: For input string: "x"` at `Position.load` ← `Config.register` ← `FpsModule.<init>` (F1) |
 | 26.3 | patched + the same file | joined; logs `blueclient.json: ignoring the unreadable value of fps.pos` and `… coords.scale` |
 
-The other seven versions (1.20.6, 1.21.1, 1.21.4, 1.21.5, 1.21.8, 1.21.10,
-26.1.2) were built and javap-verified, but not started. The error lines left
-in the logs come from the sandbox: no asset index, no sound device, and no
-network for Mojang services.
+At the end of the first pass the other seven versions had been built and
+javap-verified but not started; the second pass started all ten (above).
+The error lines left in the logs come from the sandbox: no asset index, no
+sound device, and no network for Mojang services.
