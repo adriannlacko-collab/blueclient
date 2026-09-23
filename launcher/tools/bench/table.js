@@ -24,7 +24,7 @@ function cell(xs, digits = 1) {
   return `${f(median(v))} [${f(Math.min(...v))}–${f(Math.max(...v))}]`;
 }
 
-for (const file of process.argv.slice(2)) {
+for (const file of process.argv.slice(2).filter((a) => !a.startsWith('--'))) {
   const rows = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const order = [];
   const by = {};
@@ -44,7 +44,7 @@ for (const file of process.argv.slice(2)) {
     const col = (f) => rs.map(f);
     console.log(`| ${id} | ${rs.length}/${all[id].length} | ${cell(col((r) => r.titleS))} | ${cell(col((r) => r.worldS))} | ` +
       `${cell(col((r) => r.fps && r.fps.avgFps))} | ${cell(col((r) => r.fps && r.fps.low1Fps))} | ` +
-      `${cell(col((r) => r.pauses.window.p99Ms))} | ${cell(col((r) => r.pauses.window.maxMs))} | ` +
+      `${cell(col((r) => r.fps && r.pauses.window.p99Ms))} | ${cell(col((r) => r.fps && r.pauses.window.maxMs))} | ` +
       `${cell(col((r) => r.pauses.startup.totalMs), 0)} | ${cell(col((r) => r.peakRssMb), 0)} |`);
   }
   // Paired by round: the load from other tenants moves between rounds far
@@ -59,15 +59,19 @@ for (const file of process.argv.slice(2)) {
     ['in world', (r) => r.worldS],
     ['avg FPS', (r) => r.fps && r.fps.avgFps],
     ['1% low', (r) => r.fps && r.fps.low1Fps],
-    ['pause max', (r) => r.pauses.window.maxMs]
+    ['pause max', (r) => r.fps && r.pauses.window.maxMs]
   ];
+  // A plan of one round of different things (the final check) has nothing to pair.
+  if (process.argv.includes('--no-paired') || order.length < 2) continue;
   console.log(`\nPaired against **${base}** in the same round — median change [min–max] over rounds:\n`);
   console.log('| config | rounds | ' + metrics.map((m) => m[0]).join(' | ') + ' |');
   console.log('|---|---|' + metrics.map(() => '---').join('|') + '|');
   for (const id of order.slice(1)) {
     const pairs = (by[id] || []).filter((r) => baseBy[r.round]).map((r) => [r, baseBy[r.round]]);
     const cells = metrics.map(([, f]) => {
-      const d = pairs.map(([a, b]) => (f(a) / f(b) - 1) * 100).filter(Number.isFinite);
+      const d = pairs
+        .filter(([a, b]) => typeof f(a) === 'number' && typeof f(b) === 'number')
+        .map(([a, b]) => (f(a) / f(b) - 1) * 100).filter(Number.isFinite);
       if (!d.length) return '—';
       const s = (x) => (x > 0 ? '+' : '') + x.toFixed(0) + '%';
       return `${s(median(d))} [${s(Math.min(...d))}…${s(Math.max(...d))}]`;
