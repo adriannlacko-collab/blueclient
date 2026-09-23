@@ -1044,6 +1044,37 @@ const MOJANG_FLAGS = ['-XX:+UnlockExperimentalVMOptions', '-XX:+UseG1GC', '-XX:G
  * '' once, schema 7). */
 const OLD_DEFAULT_JVM_ARGS = MOJANG_FLAGS.join(' ');
 
+/**
+ * Mojang's six, on every major, after the first full run of the bench
+ * (2026-09-23; tools/bench/README.md, "JVM flags"). Measured on Java 21
+ * (1.21.11) and Java 25 (26.3), Mojang's own runtimes, five rounds each
+ * with the order alternated, into a world generating new chunks as it
+ * went, against this set:
+ *
+ *   Generational ZGC (-XX:+UseZGC, and -XX:+ZGenerational on 21) and
+ *   Shenandoah took the longest stop in the game from 30–75 ms to 1–13
+ *   ms — and nothing a player sees moved with it: the average frame rate
+ *   within 2% either way, the slowest 1% of frames no better (the slow
+ *   frames are chunk building, not the collector), the title screen up to
+ *   6% later, and the memory the game holds doubled at an 8 GB heap (3.0 →
+ *   6.1 GB on 26.3, 2.7 → 7.1 GB on 1.21.11), because ZGC lets the heap
+ *   fill to the cap before it collects. -XX:SoftMaxHeapSize brings that
+ *   back to within a fifth of G1 and still shows no frame gained. A
+ *   collector that also refuses to start on Windows 10 before 1803, and
+ *   under a JVMCI (GraalVM) compiler a player may have pointed Settings at,
+ *   is not a trade the frames paid for.
+ *
+ *   Aikar's G1 set, -Xms equal to -Xmx, and on 25 compact object headers
+ *   (-XX:+UseCompactObjectHeaders, which 21 refuses outright): every one
+ *   inside the spread of the runs beside it, on launch and on frames alike;
+ *   Aikar's also holds 0.4–0.9 GB more (AlwaysPreTouch). And the usual
+ *   "free" addition, -XX:+ParallelRefProcEnabled, is already on by default
+ *   in both runtimes (PrintFlagsFinal), so it would change nothing.
+ *
+ * The one flag that did move the launch — an AOT cache on 25, 20–27%
+ * sooner to the title screen — is not a flag that can go here; see the
+ * note beside the spawn in launcher.js.
+ */
 function jvmBase(major) {
   return MOJANG_FLAGS;
 }
