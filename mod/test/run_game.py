@@ -130,22 +130,21 @@ def merged_jar(jar, shared, dest):
                 out.writestr(info, s.read(info.filename))
 
 
-def blueclient_config(scoreboard_pos):
+def blueclient_config(scoreboard_pos, defaults=False):
+    """defaults=True: no module switched on or off, i.e. what a fresh install runs."""
     settings = {}
     if scoreboard_pos is not None:
         settings["scoreboard.pos"] = scoreboard_pos
+    modules = {} if defaults else {"fps": True, "ping": True, "coords": True, "scoreboard": True, "armour": True,
+                                   "waypoints": True, "keystrokes": True, "clock": True, "light": True}
     return {
         "activeProfile": "Default",
         "menuHintShown": True,
-        "profiles": {"Default": {
-            "modules": {"fps": True, "ping": True, "coords": True, "scoreboard": True, "armour": True,
-                        "waypoints": True, "keystrokes": True, "clock": True, "light": True},
-            "settings": settings,
-        }},
+        "profiles": {"Default": {"modules": modules, "settings": settings}},
     }
 
 
-def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config):
+def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults=False, modules=None):
     shutil.rmtree(run_dir, ignore_errors=True)
     (run_dir / "mods").mkdir(parents=True)
     (run_dir / "config").mkdir()
@@ -154,7 +153,9 @@ def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config):
     merged_jar(Path(jars_dir) / f"blueclient-{mc}.jar", Path(jars_dir) / "blueclient-shared.zip",
                run_dir / "mods" / "blueclient.jar")
     shutil.copytree(make_world(mc), run_dir / "saves" / WORLD)
-    config = blueclient_config(scoreboard_pos)
+    config = blueclient_config(scoreboard_pos, defaults)
+    if modules:
+        config["profiles"]["Default"]["modules"].update(json.loads(modules))
     if extra_config:
         config.update(json.loads(extra_config))
     (run_dir / "config" / "blueclient.json").write_text(json.dumps(config, indent=2))
@@ -168,7 +169,12 @@ def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config):
 
 
 def classpath(mc):
-    return [*deps.libraries(mc), *deps.fabric_libraries(mc), deps.client_jar(mc)]
+    """Vanilla libraries, minus any the Fabric profile brings its own version of (ASM on some
+    versions; Loader refuses two), then the Fabric ones and the client — as a launcher merges them."""
+    fabric = deps.fabric_libraries(mc)
+    theirs = {(p.parts[-4], p.parts[-3]) for p in fabric}
+    vanilla = [p for p in deps.libraries(mc) if (p.parts[-4], p.parts[-3]) not in theirs]
+    return [*vanilla, *fabric, deps.client_jar(mc)]
 
 
 # ------------------------------------------------------------------ run
@@ -199,9 +205,45 @@ def screenshot(display, out, *keys):
                    env=env, check=False, timeout=120)
 
 
-def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep):
+def jcmd_for(mc):
+    java = Path(java_for(mc)).resolve()
+    tool = java.parent / "jcmd"
+    return str(tool if tool.exists() else deps.jdk25() / "bin" / "jcmd")
+
+
+def allocation_settings():
+    """JFR's profile settings with every new-TLAB and outside-TLAB allocation recorded with its stack.
+
+    With TLABs pinned to 16 KB (see run()) that is one event per 16 KB a thread
+    allocates: every allocation site that allocates at all shows up in
+    proportion, rather than the few hundred samples a second the profile
+    setting keeps."""
+    out = deps.CACHE / "alloc.jfc"
+    text = (deps.jdk25() / "lib" / "jfr" / "profile.jfc").read_text()
+    for event in ("jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB"):
+        head = f'<event name="{event}">'
+        at = text.index(head)
+        end = text.index("</event>", at)
+        block = text[at:end].replace('control="gc-enabled-high">false<', 'control="gc-enabled-high">true<')
+        text = text[:at] + block + text[end:]
+    out.write_text(text)
+    return out
+
+
+def record(mc, game, run_dir, seconds):
+    """A JFR recording of `seconds` of play: per-thread allocation totals, every TLAB refill with its stack, GC."""
+    out = run_dir / "alloc.jfr"
+    subprocess.run([jcmd_for(mc), str(game.pid), "JFR.start", "name=bc", f"settings={allocation_settings()}",
+                    f"duration={seconds}s", f"filename={out}"],
+                   env=clean_env(), check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(seconds + 8)
+    return out
+
+
+def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep, jfr=0, defaults=False, modules=None,
+        quit_at=None):
     run_dir = MOD / "run" / f"{mc}-{label}"
-    lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config)
+    lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults, modules)
     xvfb, display = start_xvfb()
     env = clean_env()
     env.update({"DISPLAY": display, "LIBGL_ALWAYS_SOFTWARE": "1", "GALLIUM_DRIVER": "llvmpipe"})
@@ -211,7 +253,8 @@ def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep):
     Path(env["XDG_RUNTIME_DIR"]).mkdir(parents=True, exist_ok=True, mode=0o700)
     info = deps.version_json(mc)
     profile = deps.fabric_profile(mc)
-    cmd = [java_for(mc), "-Xmx3G", "-Xss4M",
+    measure = ["-XX:TLABSize=16k", "-XX:-ResizeTLAB"] if jfr else []
+    cmd = [java_for(mc), "-Xmx3G", "-Xss4M", *measure,
            "-Djdk.net.hosts.file=" + str(hosts_file()),
            *[a for a in profile.get("arguments", {}).get("jvm", [])],
            "-cp", ":".join(str(p) for p in classpath(mc)),
@@ -240,8 +283,19 @@ def run(mc, jars_dir, label, seconds, scoreboard_pos, extra_config, keep):
         if joined:
             print(f"[game] joined the world; letting it render for {seconds}s", flush=True)
             time.sleep(seconds)
+            if jfr:
+                print(f"[game] recording {jfr}s with JFR", flush=True)
+                record(mc, game, run_dir, jfr)
             screenshot(display, run_dir / "screen-world.png")
             screenshot(display, run_dir / "screen-tab.png", "TAB")
+            screenshot(display, run_dir / "screen-menu.png", "ESC", "wait:1500")
+            if quit_at:
+                # "Save and Quit to Title": the disconnect makes BlueClient's frame
+                # clock log the session's frame count and frame-time percentiles.
+                screenshot(display, run_dir / "screen-quit.png", f"click:{quit_at}", "wait:4000")
+                until = time.time() + 90
+                while time.time() < until and "Frames:" not in (log.read_text(errors="replace") if log.exists() else ""):
+                    time.sleep(2)
     finally:
         if game.poll() is None:
             game.send_signal(signal.SIGTERM)
@@ -282,11 +336,16 @@ def main():
     ap.add_argument("--scoreboard-pos", default=None, help='JSON pair, e.g. "[0.0, 0.0]"')
     ap.add_argument("--config", default=None, help="JSON merged into the top of blueclient.json")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--quit-at", default=None, help="x,y of the pause menu's Save and Quit button (screen pixels)")
+    ap.add_argument("--jfr", type=int, default=0, help="after --seconds, record this many seconds with JFR (alloc.jfr)")
+    ap.add_argument("--defaults", action="store_true", help="leave every module at its default (a fresh install)")
+    ap.add_argument("--modules", default=None, help='JSON of module switches on top, e.g. {"colour_saturation": true}')
     args = ap.parse_args()
     jars = deps.bundle() if args.original else Path(args.jars)
     label = args.label or ("original" if args.original else "patched")
     pos = json.loads(args.scoreboard_pos) if args.scoreboard_pos else None
-    ok = run(args.mc, jars, label, args.seconds, pos, args.config, args.keep)
+    ok = run(args.mc, jars, label, args.seconds, pos, args.config, args.keep, args.jfr, args.defaults, args.modules,
+             args.quit_at)
     sys.exit(0 if ok else 1)
 
 

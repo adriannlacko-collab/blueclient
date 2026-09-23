@@ -3,11 +3,12 @@ package com.blueclient.shade;
 import com.blueclient.BlueClient;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL13C;
-import org.lwjgl.opengl.GL14C;
 import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
@@ -15,6 +16,7 @@ import org.lwjgl.opengl.GL33C;
 
 public final class Gl {
    private static int quadVao;
+   private static int unitBase = -1;
    private static final int UNKNOWN = Integer.MIN_VALUE;
    private static final Int2ObjectOpenHashMap<Object2IntOpenHashMap<String>> UNIFORMS = new Int2ObjectOpenHashMap<>();
 
@@ -144,17 +146,42 @@ public final class Gl {
    }
 
    public static void sampler(int program, String name, int unit, int texture) {
-      GL13C.glActiveTexture(33984 + unit);
-      GL33C.glBindSampler(unit, 0);
+      int at = unitBase() + unit;
+      GL13C.glActiveTexture(33984 + at);
+      GL33C.glBindSampler(at, 0);
       GL11C.glBindTexture(3553, texture);
-      GL20C.glUniform1i(uniform(program, name), unit);
+      GL20C.glUniform1i(uniform(program, name), at);
    }
 
    public static void sampler3D(int program, String name, int unit, int texture) {
-      GL13C.glActiveTexture(33984 + unit);
-      GL33C.glBindSampler(unit, 0);
+      int at = unitBase() + unit;
+      GL13C.glActiveTexture(33984 + at);
+      GL33C.glBindSampler(at, 0);
       GL11C.glBindTexture(32879, texture);
-      GL20C.glUniform1i(uniform(program, name), unit);
+      GL20C.glUniform1i(uniform(program, name), at);
+   }
+
+   /**
+    * The first of the texture units the passes here use: the last few the
+    * driver offers (units 188-191 on a typical desktop GPU), which neither the
+    * game (units 0-11 or so) nor a shader pack reaches. The game's own texture
+    * bindings are then never touched, so nothing has to be read back and put
+    * back afterwards; a unit past these is selected as scratch while a pass
+    * runs, so textures the pass creates are bound there too. Asked of the
+    * driver once. 0 (the old behaviour: units 0-2, saved and restored) only on
+    * a driver with fewer than 16 units, which OpenGL 3.2 does not allow.
+    */
+   static int unitBase() {
+      if (unitBase < 0) {
+         int max = GL11C.glGetInteger(35661);
+         unitBase = max >= 16 ? max - 4 : 0;
+      }
+
+      return unitBase;
+   }
+
+   static int scratchUnit() {
+      return unitBase() + 3;
    }
 
    public static void fullscreen() {
@@ -176,8 +203,6 @@ public final class Gl {
       GL11C.glDisable(2929);
       GL11C.glDisable(2884);
       GL11C.glDisable(3089);
-      GL11C.glDepthMask(false);
-      GL14C.glBlendEquation(32774);
    }
 
    public static void clearErrors() {
@@ -226,10 +251,17 @@ public final class Gl {
       private int turn;
       private boolean supported = true;
       private boolean started;
+      private int frames;
       public long elapsed = -1L;
 
+      /**
+       * Times one frame in sixteen. Reading a query back (even asking whether it
+       * is ready) is a round trip to the driver; on a driver that runs GL on its
+       * own thread it waits for that thread, so it is not done every frame.
+       * {@link #elapsed} keeps the last reading in between.
+       */
       public void begin() {
-         if (this.supported) {
+         if (this.supported && (this.frames++ & 15) == 0) {
             if (!GL.getCapabilities().OpenGL33) {
                this.supported = false;
             } else {
@@ -274,7 +306,27 @@ public final class Gl {
       }
    }
 
+   /**
+    * The GL state a pass changes, put back afterwards.
+    *
+    * It used to be read with ~20 glGet/glIsEnabled calls before every pass. A
+    * driver that runs GL on a thread of its own (NVIDIA's "threaded
+    * optimization", Mesa's glthread) has to stop and drain that thread to
+    * answer each one, every frame. The game keeps its own copy of most of this
+    * state (its GlStateManager), and the rest it sets again itself before it
+    * next draws, so the pass now restores from that copy ({@link Game}) and
+    * reads nothing back.
+    *
+    * That is only trusted once it has been seen to be right: the first passes
+    * at each call site, and one pass in every {@link #RECHECK} after that, still
+    * read the state back, restore from the game's copy, and compare. Any
+    * difference (a mod that keeps its own GL state, a version whose state
+    * tracking is not what {@link Game} expects) is logged once and that call
+    * site goes back to reading and restoring the driver's state as before.
+    */
    public static final class Saved {
+      private static final int PROVE = 8;
+      private static final int RECHECK = 1024;
       int program;
       int vao;
       int drawFbo;
@@ -292,6 +344,12 @@ public final class Gl {
       private final int units;
       private final boolean volumes;
       private boolean held;
+      private boolean fromGame;
+      private boolean checking;
+      private int proven;
+      private int sinceCheck;
+      private boolean distrusted;
+      private String where;
 
       public Saved(int units, boolean volumes) {
          this.units = units;
@@ -301,8 +359,32 @@ public final class Gl {
          this.boundSampler = new int[units];
       }
 
+      private boolean sharedUnits() {
+         return Gl.unitBase() == 0;
+      }
+
       public void save() {
          this.held = false;
+         boolean usable = !this.distrusted && !this.sharedUnits() && Gl.Game.ready();
+         if (usable && this.proven >= PROVE && ++this.sinceCheck < RECHECK) {
+            this.fromGame = true;
+            this.checking = false;
+            this.held = true;
+            GL13C.glActiveTexture(33984 + Gl.scratchUnit());
+            return;
+         }
+
+         this.fromGame = false;
+         this.checking = usable;
+         this.sinceCheck = 0;
+         this.read();
+         this.held = true;
+         if (!this.sharedUnits()) {
+            GL13C.glActiveTexture(33984 + Gl.scratchUnit());
+         }
+      }
+
+      private void read() {
          this.program = GL11C.glGetInteger(35725);
          this.vao = GL11C.glGetInteger(34229);
          this.drawFbo = GL11C.glGetInteger(36006);
@@ -314,24 +396,91 @@ public final class Gl {
          this.cull = GL11C.glIsEnabled(2884);
          this.scissor = GL11C.glIsEnabled(3089);
          this.depthMask = GL11C.glGetBoolean(2930);
+         if (this.sharedUnits()) {
+            for (int unit = 0; unit < this.units; unit++) {
+               GL13C.glActiveTexture(33984 + unit);
+               this.boundTexture[unit] = GL11C.glGetInteger(32873);
+               if (this.volumes) {
+                  this.boundVolume[unit] = GL11C.glGetInteger(32874);
+               }
 
-         for (int unit = 0; unit < this.units; unit++) {
-            GL13C.glActiveTexture(33984 + unit);
-            this.boundTexture[unit] = GL11C.glGetInteger(32873);
-            if (this.volumes) {
-               this.boundVolume[unit] = GL11C.glGetInteger(32874);
+               this.boundSampler[unit] = GL11C.glGetInteger(35097);
             }
-
-            this.boundSampler[unit] = GL11C.glGetInteger(35097);
          }
-
-         this.held = true;
       }
 
       public void restore() {
          if (this.held) {
             this.held = false;
+            if (this.fromGame) {
+               Gl.Game.restore();
+            } else {
+               if (this.checking) {
+                  this.check();
+               }
 
+               this.putBack();
+            }
+         }
+      }
+
+      /** Restore from the game's copy, then compare what the driver now holds with what it held before the pass. */
+      private void check() {
+         String differs;
+         try {
+            Gl.Game.restore();
+            differs = this.differences();
+         } catch (Throwable var3) {
+            differs = "the game's state could not be read (" + var3 + ")";
+         }
+
+         if (this.where == null) {
+            StackTraceElement[] stack = new Throwable().getStackTrace();
+            this.where = stack.length > 2 ? stack[2].getClassName() : "a pass";
+         }
+
+         if (differs == null) {
+            if (++this.proven == PROVE) {
+               BlueClient.LOGGER.info("GL state for {} is now restored from the game's own copy, without reading it back", this.where);
+            }
+         } else {
+            this.distrusted = true;
+
+            BlueClient.LOGGER.info(
+               "GL state for {} will keep being read back from the driver: the game's own copy did not match ({})", this.where, differs
+            );
+         }
+      }
+
+      private String differences() {
+         StringBuilder out = new StringBuilder();
+         int[] now = new int[4];
+         mismatch(out, "draw framebuffer", this.drawFbo, GL11C.glGetInteger(36006));
+         mismatch(out, "read framebuffer", this.readFbo, GL11C.glGetInteger(36010));
+         mismatch(out, "active texture", this.activeUnit, GL11C.glGetInteger(34016));
+         if (Gl.Game.tracksViewport()) {
+            GL11C.glGetIntegerv(2978, now);
+            if (now[0] != this.viewport[0] || now[1] != this.viewport[1] || now[2] != this.viewport[2] || now[3] != this.viewport[3]) {
+               out.append("viewport; ");
+            }
+         }
+
+         mismatch(out, "blend", this.blend ? 1 : 0, GL11C.glIsEnabled(3042) ? 1 : 0);
+         mismatch(out, "depth test", this.depthTest ? 1 : 0, GL11C.glIsEnabled(2929) ? 1 : 0);
+         mismatch(out, "cull", this.cull ? 1 : 0, GL11C.glIsEnabled(2884) ? 1 : 0);
+         mismatch(out, "scissor", this.scissor ? 1 : 0, GL11C.glIsEnabled(3089) ? 1 : 0);
+         mismatch(out, "depth mask", this.depthMask ? 1 : 0, GL11C.glGetBoolean(2930) ? 1 : 0);
+         return out.length() == 0 ? null : out.toString();
+      }
+
+      private static void mismatch(StringBuilder out, String what, int before, int after) {
+         if (before != after) {
+            out.append(what).append(' ').append(before).append(" -> ").append(after).append("; ");
+         }
+      }
+
+      private void putBack() {
+         if (this.sharedUnits()) {
             for (int unit = 0; unit < this.units; unit++) {
                GL13C.glActiveTexture(33984 + unit);
                GL11C.glBindTexture(3553, this.boundTexture[unit]);
@@ -341,19 +490,19 @@ public final class Gl {
 
                GL33C.glBindSampler(unit, this.boundSampler[unit]);
             }
-
-            GL13C.glActiveTexture(this.activeUnit);
-            GL20C.glUseProgram(this.program);
-            GL30C.glBindVertexArray(this.vao);
-            GL30C.glBindFramebuffer(36009, this.drawFbo);
-            GL30C.glBindFramebuffer(36008, this.readFbo);
-            GL11C.glViewport(this.viewport[0], this.viewport[1], this.viewport[2], this.viewport[3]);
-            toggle(3042, this.blend);
-            toggle(2929, this.depthTest);
-            toggle(2884, this.cull);
-            toggle(3089, this.scissor);
-            GL11C.glDepthMask(this.depthMask);
          }
+
+         GL13C.glActiveTexture(this.activeUnit);
+         GL20C.glUseProgram(this.program);
+         GL30C.glBindVertexArray(this.vao);
+         GL30C.glBindFramebuffer(36009, this.drawFbo);
+         GL30C.glBindFramebuffer(36008, this.readFbo);
+         GL11C.glViewport(this.viewport[0], this.viewport[1], this.viewport[2], this.viewport[3]);
+         toggle(3042, this.blend);
+         toggle(2929, this.depthTest);
+         toggle(2884, this.cull);
+         toggle(3089, this.scissor);
+         GL11C.glDepthMask(this.depthMask);
       }
 
       private static void toggle(int cap, boolean on) {
@@ -361,6 +510,331 @@ public final class Gl {
             GL11C.glEnable(cap);
          } else {
             GL11C.glDisable(cap);
+         }
+      }
+   }
+
+   /**
+    * The game's own record of the GL state (GlStateManager and friends), read
+    * reflectively so one class serves every Minecraft this mod is built for:
+    * the class and field names are tried as Mojang spells them (26.x) and as
+    * intermediary does (1.20.6-1.21.11, where they are stable).
+    *
+    * <ul>
+    * <li>Capabilities (blend, depth test, cull, scissor) and the active
+    * texture unit: GlStateManager in every version. 26.x keeps blend per draw
+    * buffer ({@code BLEND_ENABLE}).</li>
+    * <li>Framebuffers: GlStateManager's {@code readFbo/writeFbo} (1.21.5+) or
+    * {@code READ_FRAMEBUFFER/DRAW_FRAMEBUFFER} (1.21.2-1.21.4). 1.20.5-1.21.1
+    * keep none, and there the main render target is what is bound around the
+    * passes; the check above proves it or turns this off.</li>
+    * <li>Viewport: {@code GlStateManager.Viewport} up to 1.21.4. From 1.21.5 on
+    * every render pass sets its own viewport, so nothing is restored.</li>
+    * <li>Program and vertex array: from 1.21.5 on every render pass rebinds
+    * both (its pipeline cache is cleared when the pass is created). Before
+    * that the game remembers the last program (1.20.5-1.21.1:
+    * {@code ShaderInstance.lastProgramId}) and the last immediate vertex
+    * buffer ({@code BufferUploader}); both are unbound here and those
+    * memories cleared, so the game binds its own again.</li>
+    * </ul>
+    */
+   static final class Game {
+      private static boolean tried;
+      private static boolean ok;
+      private static Field bool;
+      private static boolean[] blendEnable;
+      private static Object blendMode;
+      private static Object depthMode;
+      private static Object cullMode;
+      private static Object scissorMode;
+      private static Field activeTexture;
+      private static Field readFbo;
+      private static Field writeFbo;
+      private static Object readFramebuffer;
+      private static Object drawFramebuffer;
+      private static Field framebufferBinding;
+      private static Method mainTarget;
+      private static Field frameBufferId;
+      private static Object viewport;
+      private static Field viewX;
+      private static Field viewY;
+      private static Field viewW;
+      private static Field viewH;
+      private static Field lastProgramId;
+      private static Field lastAppliedShader;
+      private static Method invalidateUploader;
+
+      private Game() {
+      }
+
+      static boolean ready() {
+         if (!tried) {
+            tried = true;
+
+            String missing;
+            try {
+               missing = find();
+            } catch (Throwable var1) {
+               missing = var1.toString();
+            }
+
+            ok = missing == null;
+            if (!ok) {
+               BlueClient.LOGGER.info("GL state will be read back from the driver: the game's own copy was not found ({})", missing);
+            }
+         }
+
+         return ok;
+      }
+
+      static boolean tracksViewport() {
+         return viewport != null;
+      }
+
+      private static Class<?> type(String... names) {
+         ClassLoader loader = Gl.class.getClassLoader();
+
+         for (String name : names) {
+            try {
+               return Class.forName(name, false, loader);
+            } catch (Throwable var6) {
+            }
+         }
+
+         return null;
+      }
+
+      private static Field field(Class<?> owner, String... names) {
+         for (String name : names) {
+            try {
+               Field found = owner.getDeclaredField(name);
+               found.setAccessible(true);
+               return found;
+            } catch (Throwable var7) {
+            }
+         }
+
+         return null;
+      }
+
+      private static Method method(Class<?> owner, String... names) {
+         for (String name : names) {
+            try {
+               Method found = owner.getDeclaredMethod(name);
+               found.setAccessible(true);
+               return found;
+            } catch (Throwable var7) {
+            }
+         }
+
+         return null;
+      }
+
+      private static Object value(Class<?> owner, String... names) throws ReflectiveOperationException {
+         Field found = field(owner, names);
+         return found == null ? null : found.get(null);
+      }
+
+      private static Object child(Object parent, String... names) throws ReflectiveOperationException {
+         if (parent == null) {
+            return null;
+         } else {
+            Field found = field(parent.getClass(), names);
+            return found == null ? null : found.get(parent);
+         }
+      }
+
+      private static String find() throws ReflectiveOperationException {
+         Class<?> state = type(
+            "com.mojang.renderpearl.backend.opengl.GlStateManager", "com.mojang.blaze3d.opengl.GlStateManager", "com.mojang.blaze3d.platform.GlStateManager"
+         );
+         if (state == null) {
+            return "GlStateManager";
+         } else {
+            Object blendEnabled = value(state, "BLEND_ENABLE");
+            if (blendEnabled instanceof boolean[] perBuffer) {
+               blendEnable = perBuffer;
+            } else {
+               // one BlendState, or (26.2) one per draw buffer, all toggling GL_BLEND itself
+               Object blend = value(state, "BLEND");
+               if (blend instanceof Object[] perBuffer) {
+                  blend = perBuffer.length > 0 ? perBuffer[0] : null;
+               }
+
+               blendMode = child(blend, "mode", "field_5045");
+            }
+
+            depthMode = child(value(state, "DEPTH"), "mode", "field_5074");
+            cullMode = child(value(state, "CULL"), "enable", "field_5072");
+            scissorMode = child(value(state, "SCISSOR"), "mode", "field_26840");
+            activeTexture = field(state, "activeTexture");
+            if (depthMode != null && cullMode != null && scissorMode != null && activeTexture != null && (blendEnable != null || blendMode != null)) {
+               bool = field(depthMode.getClass(), "enabled", "field_5051");
+               if (bool == null || bool.getType() != boolean.class || activeTexture.getType() != int.class) {
+                  return "BooleanState.enabled";
+               } else {
+                  readFbo = field(state, "readFbo");
+                  writeFbo = field(state, "writeFbo");
+                  if (readFbo == null || writeFbo == null) {
+                     readFbo = null;
+                     writeFbo = null;
+                     readFramebuffer = value(state, "READ_FRAMEBUFFER");
+                     drawFramebuffer = value(state, "DRAW_FRAMEBUFFER");
+                     if (readFramebuffer != null && drawFramebuffer != null) {
+                        framebufferBinding = field(readFramebuffer.getClass(), "binding", "field_52509");
+                     }
+
+                     if (framebufferBinding == null) {
+                        Class<?> minecraft = type("net.minecraft.client.Minecraft", "net.minecraft.class_310");
+                        Class<?> target = type("com.mojang.blaze3d.pipeline.RenderTarget", "net.minecraft.class_276");
+                        Method instance = minecraft == null ? null : method(minecraft, "getInstance", "method_1551");
+                        Method main = minecraft == null ? null : method(minecraft, "getMainRenderTarget", "method_1522");
+                        frameBufferId = target == null ? null : field(target, "frameBufferId", "field_1476");
+                        if (instance == null || main == null || frameBufferId == null) {
+                           return "the main render target";
+                        }
+
+                        mainTarget = main;
+                        mainClient = instance;
+                     }
+                  }
+
+                  Class<?> view = type(state.getName() + "$Viewport", state.getName() + "$class_1040");
+                  if (view != null) {
+                     viewport = value(view, "INSTANCE", "field_5169");
+                     viewX = field(view, "x", "field_5172");
+                     viewY = field(view, "y", "field_5171");
+                     viewW = field(view, "width", "field_5170");
+                     viewH = field(view, "height", "field_5168");
+                     if (viewport == null || viewX == null || viewY == null || viewW == null || viewH == null) {
+                        return "GlStateManager.Viewport";
+                     }
+                  }
+
+                  // 1.20.5-1.21.1 (the versions without a framebuffer record) remember the
+                  // last program; later versions bind theirs on every draw or pass.
+                  Class<?> shader = type("net.minecraft.client.renderer.ShaderInstance", "net.minecraft.class_5944");
+                  if (shader != null) {
+                     lastProgramId = field(shader, "lastProgramId", "field_29486");
+                     lastAppliedShader = field(shader, "lastAppliedShader", "field_29485");
+                     if (lastProgramId == null || lastAppliedShader == null) {
+                        lastProgramId = null;
+                        lastAppliedShader = null;
+                     }
+                  }
+
+                  if (mainTarget != null && lastProgramId == null) {
+                     return "ShaderInstance.lastProgramId";
+                  }
+
+                  Class<?> uploader = type("com.mojang.blaze3d.vertex.BufferUploader", "net.minecraft.class_286");
+                  if (uploader != null) {
+                     invalidateUploader = method(uploader, "invalidate", "method_43436");
+                  }
+
+                  return null;
+               }
+            } else {
+               return "the blend, depth, cull and scissor state";
+            }
+         }
+      }
+
+      private static Method mainClient;
+
+      private static boolean on(Object mode) throws IllegalAccessException {
+         return bool.getBoolean(mode);
+      }
+
+      /** Put the driver back where the game believes it is, and make the game rebind what it does not track. */
+      static void restore() {
+         try {
+            GL13C.glActiveTexture(33984 + activeTexture.getInt(null));
+            GL20C.glUseProgram(0);
+            if (lastProgramId != null) {
+               lastProgramId.setInt(null, -1);
+               lastAppliedShader.set(null, null);
+            }
+
+            GL30C.glBindVertexArray(0);
+            if (invalidateUploader != null) {
+               invalidateUploader.invoke(null);
+            }
+
+            if (readFbo != null) {
+               GL30C.glBindFramebuffer(36008, readFbo.getInt(null));
+               GL30C.glBindFramebuffer(36009, writeFbo.getInt(null));
+            } else if (framebufferBinding != null) {
+               GL30C.glBindFramebuffer(36008, framebufferBinding.getInt(readFramebuffer));
+               GL30C.glBindFramebuffer(36009, framebufferBinding.getInt(drawFramebuffer));
+            } else {
+               GL30C.glBindFramebuffer(36160, frameBufferId.getInt(mainTarget.invoke(mainClient.invoke(null))));
+            }
+
+            if (viewport != null) {
+               GL11C.glViewport(viewX.getInt(viewport), viewY.getInt(viewport), viewW.getInt(viewport), viewH.getInt(viewport));
+            }
+
+            if (blendEnable != null) {
+               for (int i = 0; i < blendEnable.length; i++) {
+                  if (blendEnable[i]) {
+                     GL30C.glEnablei(3042, i);
+                  } else {
+                     GL30C.glDisablei(3042, i);
+                  }
+               }
+            } else {
+               Saved.toggle(3042, on(blendMode));
+            }
+
+            Saved.toggle(2929, on(depthMode));
+            Saved.toggle(2884, on(cullMode));
+            Saved.toggle(3089, on(scissorMode));
+         } catch (ReflectiveOperationException var1) {
+            throw new IllegalStateException(var1);
+         }
+      }
+   }
+
+   /**
+    * The pixel-pack buffer binding and PACK_* pixel store the clip recorder
+    * changes for each frame it reads back, and puts back afterwards. Read with
+    * five glGets per captured frame before; now read on the first frames and
+    * once in {@link #RECHECK} after that, and trusted in between once the same
+    * values have been seen {@link #PROVE} times in a row (the game leaves them
+    * alone). A change turns the shortcut off for the session.
+    */
+   public static final class Packing {
+      private static final int PROVE = 8;
+      private static final int RECHECK = 1024;
+      private final int[] seen = new int[5];
+      private final int[] now = new int[5];
+      private int proven;
+      private int sinceCheck;
+      private boolean distrusted;
+
+      /** {buffer, row length, skip pixels, skip rows, alignment}: what to restore. */
+      public int[] read() {
+         if (!this.distrusted && this.proven >= PROVE && ++this.sinceCheck < RECHECK) {
+            return this.seen;
+         } else {
+            this.sinceCheck = 0;
+            this.now[0] = GL11C.glGetInteger(35053);
+            this.now[1] = GL11C.glGetInteger(3330);
+            this.now[2] = GL11C.glGetInteger(3332);
+            this.now[3] = GL11C.glGetInteger(3331);
+            this.now[4] = GL11C.glGetInteger(3333);
+            if (!this.distrusted) {
+               if (this.proven == 0 || java.util.Arrays.equals(this.now, this.seen)) {
+                  System.arraycopy(this.now, 0, this.seen, 0, 5);
+                  this.proven++;
+               } else {
+                  this.distrusted = true;
+                  BlueClient.LOGGER.info("Clipping: the pixel-pack state changes between frames, so it keeps being read back");
+               }
+            }
+
+            return this.now;
          }
       }
    }
