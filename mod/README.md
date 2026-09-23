@@ -106,43 +106,27 @@ were written checked the md5 of each version's decompile).
 ## New classes: Hotkeys
 
 Not every change here is a fix to a decompiled class. The **Hotkeys** module
-(Blue Settings → General → Hotkeys, gear) is new code: four new classes, and
+(Blue Settings → General → Hotkeys, gear) is new code: three new classes, and
 two patched ones that list it (`Hud.register`) and open its page from its
-gear (`VanillaScreen.pageFor`).
+gear (`VanillaScreen.pageFor`). A hotkey is a key that sends chat lines or
+commands (a line starting with `/`), in order, once per press.
 
 * `hud/modules/HotkeysModule` — the store (`config/blueclient-hotkeys.json`,
-  beside `blueclient.json`, written through `Disk`), the trigger, the player
-  and the recorder. A hotkey is a name, a key, a mode — *Once* (per press),
-  *Loop* (press to start, press again to stop; optionally N runs) or *While
-  held* — a pause between runs, and a list of actions: a chat line or a
-  command (a line starting with `/`), a press of one of the game's own key
-  mappings (tapped or held for a time), a wait, or recorded movement.
+  beside `blueclient.json`, written through `Disk`), the trigger and the
+  sender. A hotkey is a name, a key, on/off and its lines.
 * `screen/HotkeysScreen` — the page, laid out like Waypoints: a row per
-  hotkey (on/off, ▶/■ to run or stop it now, gear, X), then **Add Hotkey** and
-  **Settings** (the module's switch, a stop-all key, stop on damage, the
-  gap between chat lines, and whether starts and stops are said on screen).
+  hotkey (on/off, ▶ to send it now, gear, X), then **Add Hotkey** and
+  **Settings** (the module's switch and the gap between chat lines).
 * `screen/HotkeyEditScreen` — one hotkey: name, key (click, then press a key
-  or mouse button; Esc clears), mode, runs, pause, its actions in order (edit,
-  move up, remove), **+ Chat / command**, **+ Key press**, **+ Wait** and
-  **● Record movement**. It warns when the key is also bound in Controls.
-* `screen/HotkeyStepScreen` — one action.
+  or mouse button; Esc clears), on/off, and its lines as text boxes (move up,
+  remove) with **+ Chat line or command** under them. It warns when the key
+  is also bound in Controls.
 
 What it does in the game, and why it is built that way:
 
-* **Only the game's own inputs.** A key press is `KeyMapping.setDown` plus
-  `KeyMapping.click` on the key the mapping is bound to, exactly what the
-  keyboard handler does; chat and commands go through
-  `ClientPacketListener.sendChat` / `sendCommand`, as if typed (so commands are
-  signed the same way). Nothing is sent that a player could not send by hand.
-* **Recording** watches forward/back/left/right, jump, sneak, sprint, attack
-  and use (one bit each), the hotbar slot and the camera turn, once a tick,
-  from the moment the menu closes until any screen opens (Esc). Idle ticks at
-  either end are cut (sprint alone counts as idle: Toggle Sprint holds it
-  down). Stored run-length encoded, `mask,slot,yaw,pitch[,repeat]` per tick.
-  Playback sets the same keys, clicks on each key's first tick down (so an
-  attack or use lands), selects the slot, and spreads each tick's turn over
-  that tick's frames (`Module.frame`) so the camera moves as smoothly as it
-  was moved. Ten minutes at most.
+* **Only the game's own chat.** Lines go through
+  `ClientPacketListener.sendChat` / `sendCommand`, as if typed (so commands
+  are signed the same way). Nothing is sent that a player could not type.
 * **The trigger** is a `KeyMapping` of the hotkey's own, made at run time and
   never registered with Fabric, so it is not in Controls or `options.txt` but
   the game's key events still reach it: a tap too short for any tick to see
@@ -150,26 +134,23 @@ What it does in the game, and why it is built that way:
   key stays down are ignored. Before 1.21.9 a key has one mapping, so there
   the hotkey's own steps aside while Controls has the same key bound, and
   the key is read by polling, once a tick and once a frame
-  (`HotkeysModule.SHARED_KEYS`).
-* **Pausing.** Any screen (chat, inventory, pause menu) pauses every run and
-  lets go of its keys; closing it resumes. Taking damage stops them all (a
-  setting), as do the stop-all key, the hotkey's own key, switching the module
-  off, and leaving the world. A server that speaks BlueClient's server
-  protocol can turn the module off like any other (`"off": ["hotkeys"]`);
-  the page then says so.
-* **Chat gap.** Chat lines and commands from hotkeys are at least this far
-  apart (1 s by default), whatever the loop does: the vanilla server kicks a
-  client that sends chat much faster than one line a second for long.
+  (`HotkeysModule.SHARED_KEYS`). While any screen is open (chat included)
+  the keys do nothing, so typing never sends a hotkey.
+* **Chat gap.** Lines from hotkeys are at least this far apart (1 s by
+  default): the vanilla server kicks a client that sends chat much faster
+  than one line a second for long. Pressing a hotkey whose lines are still
+  going out does nothing. A server that speaks BlueClient's server protocol
+  can turn the module off like any other (`"off": ["hotkeys"]`); the page
+  then says so.
 
-The four files are written once, for 26.3, and `tools/hotkeys_port.py`
+The three files are written once, for 26.3, and `tools/hotkeys_port.py`
 writes the other nine versions from them: 26.1.2 and 26.2 read keys through
 GLFW (Escape 256, no key −1, rather than SDL's 41 and 0); 1.20.6–1.21.11 get
 the intermediary names, from a table looked up in Mojang's client mappings
-joined with Fabric intermediary (the same for all seven); up to 1.21.4 the
-hotbar slot is the field `Inventory.selected`. Edit the 26.3 files and run
-it, then build. `tools/jarpatch.py` now also places brand-new top-level
-classes (after the last class of their package); the verify step lists them
-as `new class (no baseline)`.
+joined with Fabric intermediary (the same for all seven). Edit the 26.3
+files and run it, then build. `tools/jarpatch.py` now also places brand-new
+top-level classes (after the last class of their package); the verify step
+lists them as `new class (no baseline)`.
 
 ## Testing in the real game
 
@@ -234,7 +215,7 @@ byte-identical to the scratch build the runs below used (sha1 of
 
 ### Hotkeys (new module)
 
-`python3 mod/build.py` builds all ten with the four Hotkeys classes (14 new
+`python3 mod/build.py` builds all ten with the three Hotkeys classes (7 new
 class files per jar with their nested classes) and `Hud` and `VanillaScreen`
 patched. `patch:` shows `Hud.register` and `VanillaScreen.pageFor` as the
 only changed members. The `recompile:` report for `VanillaScreen` has two
@@ -246,40 +227,25 @@ built with Mojang names and remapped statically, and `lambda$method_25426$0`
 when recompiled from intermediary.
 
 In the game (`--file config/blueclient-hotkeys.json=mod/test/hotkeys.json`
-and `--shot` steps; the fixture has a chat hotkey on H, a looped recording
-on J that walks and turns 90°, two jumps on K and a command on N):
+and `--shot` steps; the fixture has one line on H, two on J and a command
+on N):
 
-| version | chat line on H | loop on J, started by a quick tap | pages (pause menu → BlueClient → search → Hotkeys → Edit), key rebound by a key press |
+| version | one line on H | two lines on J | pages (pause menu → BlueClient → search → Hotkeys → Edit), a line added there |
 |---|---|---|---|
-| 26.3 | sent | walks, turns, switches slot | all drawn; Settings, the action editor, "+ Chat / command" and a live recording checked too |
-| 26.2 | sent | walks, turns 90°, selects the recorded slot | Hotkeys page drawn |
-| 26.1.2 | sent | runs | all drawn, key rebound |
-| 1.21.11 | sent | runs | all drawn, key rebound |
-| 1.21.5 | sent | runs (the first with `getSelectedSlot`) | Hotkeys page drawn |
-| 1.20.6 | sent | runs | all drawn, key rebound |
+| 26.3 | sent | sent in order, a second apart | all drawn; "bye" typed into a new line, saved, and sent third on J |
+| 1.20.6 | sent | sent in order, a second apart | all drawn; "bye" typed into a new line, saved, and sent third on J |
 
-Each joined with 0 mixin or linkage errors. 1.21.1, 1.21.4, 1.21.8 and
-1.21.10 were built from the same sources as their neighbours (1.20.6's
-`Inventory.selected` for 1.21.1 and 1.21.4, 1.21.5's for 1.21.8, 1.21.11's
-shared keys for 1.21.10) and compiled against their own jars. They were not
-started.
+Each joined with 0 mixin or linkage errors. The other eight were compiled
+against their own jars from the same generated sources. An earlier version
+of the module (with key presses, waits, loops and recorded movement, since
+removed) ran on 26.2, 26.1.2, 1.21.11 and 1.21.5 as well, with the same
+trigger and pages.
 
-On 26.3 a hotkey was also made from scratch through the pages: Add Hotkey,
-key set by pressing R, **● Record movement**, W held for 1.5 s then A,
-Esc. The Edit page came back with "Movement: … with camera", and pressing R
-in the world played it (▶, and the player walked the recorded path, about
-9 blocks). The first pass found two bugs, both fixed:
-
-* a quick tap was missed at the sandbox's 8–12 fps, because SDL saw the
-  press and the release in the same event pump, so no poll of the key ever
-  saw it down. The fix is the event-driven trigger described above.
-* Toggle Sprint held the sprint bit down, so idle time before and after a
-  recording was never cut.
-
-The `/time set noon` hotkey was sent, and refused because the test world
-has cheats off. Stop on damage fired when the loop walked the player off a
-ledge. The error lines in the logs are the sandbox's (no Mojang services,
-no sound device, no narrator).
+A quick tap was missed at the sandbox's 8–12 fps on the first pass, because
+SDL saw the press and the release in the same event pump, so no poll of the
+key ever saw it down. The fix is the event-driven trigger described above.
+The error lines in the logs are the sandbox's (no Mojang services, no sound
+device, no narrator).
 
 ### Totem counter beside the armour, and "Layout" (F9)
 

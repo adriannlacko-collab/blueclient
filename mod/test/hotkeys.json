@@ -1,10 +1,5 @@
 {"hotkeys": [
- {"name": "Greet", "key": "key.keyboard.h", "enabled": true, "mode": "once", "loops": 0, "gap": 0,
-  "steps": [{"type": "chat", "text": "hello from a hotkey"}]},
- {"name": "Walk", "key": "key.keyboard.j", "enabled": true, "mode": "loop", "loops": 0, "gap": 0,
-  "steps": [{"type": "moves", "look": true, "frames": "1,0,3,0,30;0,2,0,0,10"}]},
- {"name": "Hop", "key": "key.keyboard.k", "enabled": true, "mode": "once", "loops": 0, "gap": 0,
-  "steps": [{"type": "key", "mapping": "key.jump", "length": 1}, {"type": "wait", "length": 12}, {"type": "key", "mapping": "key.jump", "length": 1}]},
- {"name": "Noon", "key": "key.keyboard.n", "enabled": true, "mode": "once", "loops": 0, "gap": 0,
-  "steps": [{"type": "chat", "text": "/time set noon"}]}
+ {"name": "Greet", "key": "key.keyboard.h", "enabled": true, "lines": ["hello from a hotkey"]},
+ {"name": "Two lines", "key": "key.keyboard.j", "enabled": true, "lines": ["first of two", "second of two"]},
+ {"name": "Noon", "key": "key.keyboard.n", "enabled": true, "lines": ["/time set noon"]}
 ]}
