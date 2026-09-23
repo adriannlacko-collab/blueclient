@@ -22,7 +22,7 @@ echo "== 1. update found, downloaded, verified, staged; Restart to update"; fres
 echo "== 2. the swap script's work, then the next start on 1.12.0"
 D=$(ls -d $W/a/userData/update-bundle/*/new); cp $D/app.asar $W/a/install/app.asar; rm -rf $W/a/install/resources; cp -r $D/resources $W/a/install/resources
 R=$(ls $W/a/userData/swap-*.result 2>/dev/null | head -1); [ -z "$R" ] && R=$(python3 -c "import json;print(json.load(open('$W/a/userData/update-attempts.json'))['last']['result'])"); echo ok > "$R"
-$ASAR extract-file $W/a/install/app.asar package.json >/dev/null 2>\&1; cat package.json 2>/dev/null; rm -f package.json; cat $W/a/install/resources/bundle.version; echo; ls $W/a/install/resources/mod
+(cd $W && $ASAR extract-file a/install/app.asar package.json >/dev/null 2>&1 && cat package.json && rm -f package.json); cat $W/a/install/resources/bundle.version; echo; ls $W/a/install/resources/mod
 run start-applies $W/a 1.12.0
 run look $W/a 1.12.0
 echo "   staging left: $(ls $W/a/userData/update-bundle 2>/dev/null | wc -l)  attempts: $(cat $W/a/userData/update-attempts.json)"
