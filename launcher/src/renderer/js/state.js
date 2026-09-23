@@ -97,6 +97,21 @@ const SEED_VERSION = '1.21.8';
  * which is real work on a hundred jars and nothing measurable on this handful,
  * and it was the mod in the stack most likely to hold a profile back on the
  * day a new Minecraft release lands.
+ *
+ * Measured, and the list left as it is (2026-09-23; tools/bench/README.md,
+ * "Mods" — five rounds each on 26.3 and 1.21.11, the real game walking into
+ * new chunks). ModernFix, Noisium and Enhanced Block Entities have no Fabric
+ * build past 1.21.4/1.21.5, so they cannot help the versions this launcher
+ * leads with. ScalableLux was neutral to slightly worse (+3% to the title on
+ * 26.3, the slowest frames no better); C2ME made the walk into new chunks
+ * slower on 26.3 (+13% to the world) and cost a fifth of the 1% low on
+ * 1.21.11, its generation threads competing with the frame on four cores;
+ * ThreadTweak (1.21.x only) sat inside the noise. None of them added a mixin
+ * error or a crash — they simply did not pay. The other way round, each of
+ * the stack's own jars taken out in turn: none of them costs launch time
+ * worth the name (taking FerriteCore out made the launch 3% *slower*), and
+ * the whole stack costs 1.3–1.8 s over the companion alone while drawing a
+ * third more frames even on a software renderer.
  */
 function performanceStack() {
   return [
