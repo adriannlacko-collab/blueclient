@@ -22,7 +22,7 @@ one background thread (`Disk`, atomic move); network work is on executors
 and comes back through `client.execute`. The findings below are what is
 left. **F** = fixed by a patch in `mod/patches/`, **U** = found in the first
 pass and not fixed then; a second pass fixed U1, U4, U5, U8, U12 and part of
-U6 (marked "(fixed)" and moved up) and added F7, F8. The rest are listed
+U6 (marked "(fixed)" and moved up) and added F7, F8; F9 came from a player report. The rest are listed
 under "Not fixed" with the reason and a concrete fix.
 
 Severity: **High** can stop the game or lose user data; **Medium** visible
@@ -220,6 +220,31 @@ modifier checks and the shulker preview all come through here.
 SDL documents the returned array as valid for the life of the application;
 the first non-null wrapper is kept and read with the same index. 26.2 and
 older use GLFW's `glfwGetKey`, which does not allocate.
+
+### F9 — Medium — bug — the totem counter is left behind when the armour strip shortens (all 10)
+With Armour and Totem counter both in their default places, `Hud.stackDefaults`
+puts the armour strip in the bottom-right corner and the totem slot 2 px to
+its left, so the slot follows the strip as pieces come and go. But the first
+drag or arrow-nudge in the layout screen (`HudLayoutScreen.freeze`) writes
+every auto-placed module's current pixel position into the config, the totem
+counter included. From then on the totem is "moved" and stays where the strip
+ended on that day: take off a piece and the strip shrinks to the right,
+leaving a 20 px gap per missing piece. The fix:
+
+* `freeze` leaves the totem counter alone while it sits beside the armour
+  (`Hud.followsArmour`, new), so only a drag or nudge of the counter itself
+  pins it;
+* a totem counter still in its default place follows the armour strip even
+  when the armour has been placed by hand: 2 px to its left, bottoms lined
+  up, or 2 px to its right when there is no room on the left
+  (`Hud.stackDefaults`).
+
+A totem counter pinned by `freeze` in an earlier version stays pinned: "Reset
+to default" in the layout screen puts it back.
+
+The layout screen is also renamed "Layout" (its title, the tile that opens
+it in `VanillaModsScreen`, and "their options and the layout" in
+`PresetEditScreen`).
 
 ---
 

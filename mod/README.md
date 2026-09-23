@@ -158,6 +158,21 @@ the artifacts listed above. The build into `launcher/resources/mod` is
 byte-identical to the scratch build the runs below used (sha1 of
 `blueclient-26.3.jar`: `cf51f5e270902742785098f27a72be5f874ab432`).
 
+### Totem counter beside the armour, and "Layout" (F9)
+
+`Hud`, `HudLayoutScreen`, `VanillaModsScreen` and `PresetEditScreen` added
+on all ten (31–37 classes replaced per jar). Their `recompile:` report flags
+three members the patch does not touch, on every version, all
+decompiler artifacts: `Hud.layOutDefaults` (a `continue` rebuilt as an
+`if`), `HudLayoutScreen.onKey` (the four arrow cases in a different order,
+same `nudge` arguments per key) and `PresetEditScreen.content` (a local
+assigned before rather than after a field store). The placement was checked
+by driving the patched 26.3 `Hud.stackDefaults` with stand-in Armour
+(1–4 pieces) and Totem counter modules, both in default places, with the
+armour pinned where the layout screen's freeze would pin it, with the armour
+dragged to the left edge, and with the totem moved by hand. 26.3 and 1.20.6
+started in the game with the new jars: joined, 0 mixin/linkage errors.
+
 ### Second pass: all ten versions in the game
 
 Each version with the final jars, the test config plus Colour Saturation,
