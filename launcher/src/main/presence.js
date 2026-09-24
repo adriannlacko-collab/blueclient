@@ -34,8 +34,10 @@
 const net = require('net');
 const crypto = require('crypto');
 
-/** The Discord application this launcher shows up as. Empty means off. */
-const APP_ID = '';
+/** The Discord application this launcher shows up as. Empty means off.
+    "BlueClient" at discord.com/developers, made 2026-09-24 with the logo
+    uploaded as `blueclient`. */
+const APP_ID = '1552693815842705418';
 
 const OP_HANDSHAKE = 0;
 const OP_FRAME = 1;
