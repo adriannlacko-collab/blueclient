@@ -4,6 +4,7 @@ import com.blueclient.graphics.Graphics;
 import com.blueclient.hud.Module;
 import com.blueclient.hud.modules.HotkeysModule;
 import com.blueclient.hud.modules.MusicModule;
+import com.blueclient.hud.modules.ScoreboardModule;
 import com.blueclient.ui.Blit;
 import com.blueclient.ui.Icon;
 import com.blueclient.ui.Ids;
@@ -128,7 +129,7 @@ public abstract class VanillaScreen extends BlueScreen {
       toggle.field_22763 = !module.isHeldOff();
       toggle.method_47400(class_7919.method_47407(class_2561.method_43470(module.isHeldOff() ? module.heldOffNote() : module.description)));
       this.method_37063(toggle);
-      boolean configurable = !module.visibleSettings().isEmpty();
+      boolean configurable = !module.visibleSettings().isEmpty() || module instanceof ScoreboardModule;
       class_4185 gear = new IconButton(
          x + toggleW + 2, y, 20, 20, class_2561.method_43473(), button -> Screens.open(this.field_22787, this.pageFor(module)), Icon.GEAR
       );
@@ -143,6 +144,8 @@ public abstract class VanillaScreen extends BlueScreen {
    private class_437 pageFor(Module module) {
       if (module instanceof HotkeysModule) {
          return new HotkeysScreen(this);
+      } else if (module instanceof ScoreboardModule) {
+         return new ScoreboardLinesScreen(this);
       } else {
          return (class_437)(module instanceof MusicModule ? new MusicScreen(this) : new VanillaOptionsScreen(this, module));
       }

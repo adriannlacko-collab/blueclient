@@ -340,6 +340,13 @@ public final class Hud {
                      draw(ctx, module, client, screenW, screenH);
                   }
                }
+            } else {
+               // The game draws its sidebar under the debug screen too; a board with lines
+               // switched off is drawn by its module instead, so it stays as well.
+               ScoreboardModule board = ScoreboardModule.get();
+               if (board != null && showing.contains(board) && board.drawsItself(client)) {
+                  draw(ctx, board, client, screenW, screenH);
+               }
             }
          }
       }

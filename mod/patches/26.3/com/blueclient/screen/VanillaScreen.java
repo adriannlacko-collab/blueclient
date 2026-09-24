@@ -4,6 +4,7 @@ import com.blueclient.graphics.Graphics;
 import com.blueclient.hud.Module;
 import com.blueclient.hud.modules.HotkeysModule;
 import com.blueclient.hud.modules.MusicModule;
+import com.blueclient.hud.modules.ScoreboardModule;
 import com.blueclient.ui.Blit;
 import com.blueclient.ui.Icon;
 import com.blueclient.ui.Ids;
@@ -124,7 +125,7 @@ public abstract class VanillaScreen extends BlueScreen {
       toggle.active = !module.isHeldOff();
       toggle.setTooltip(Tooltip.create(Component.literal(module.isHeldOff() ? module.heldOffNote() : module.description)));
       this.addRenderableWidget(toggle);
-      boolean configurable = !module.visibleSettings().isEmpty();
+      boolean configurable = !module.visibleSettings().isEmpty() || module instanceof ScoreboardModule;
       Button gear = new IconButton(x + toggleW + 2, y, 20, 20, Component.empty(), button -> Screens.open(this.minecraft, this.pageFor(module)), Icon.GEAR);
       gear.active = configurable;
       if (configurable) {
@@ -137,6 +138,8 @@ public abstract class VanillaScreen extends BlueScreen {
    private Screen pageFor(Module module) {
       if (module instanceof HotkeysModule) {
          return new HotkeysScreen(this);
+      } else if (module instanceof ScoreboardModule) {
+         return new ScoreboardLinesScreen(this);
       } else {
          return (Screen)(module instanceof MusicModule ? new MusicScreen(this) : new VanillaOptionsScreen(this, module));
       }

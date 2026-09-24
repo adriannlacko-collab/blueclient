@@ -18,7 +18,9 @@ rebuilding the mod from decompiled code.
   the javap comparison (`javapdiff.py`, `methoddiff.py`, `recompile_diff.py`),
   the JFR allocation summary (`jfr_alloc.py` → `JfrAlloc.java`), and
   `hotkeys_port.py`, which writes the Hotkeys module's sources for nine
-  versions from the 26.3 ones (see "New classes: Hotkeys").
+  versions from the 26.3 ones (see "New classes: Hotkeys"), and
+  `scoreboard_port.py`, the same for switching sidebar lines off (see
+  "Scoreboard lines").
 
 ## Build
 
@@ -171,6 +173,47 @@ it, then build. `tools/jarpatch.py` now also places brand-new top-level
 classes (after the last class of their package); the verify step lists them
 as `new class (no baseline)`.
 
+## Scoreboard lines
+
+The Scoreboard module's gear (Blue Settings → Visual → Scoreboard) opens a
+page listing the sidebar on screen: its title and each of its lines, each a
+button that switches it ON or OFF, then **Numbers** (the numbers on the
+right), **Show all** and **Board** (the module's own switch). It is all
+client-side, so it works on any server. The page follows the board while it
+is open: rows are relabelled every half second (timers, coin counts) and laid
+out again when lines come or go.
+
+* **What is kept.** `config/blueclient-scoreboard.json`, written through
+  `Disk`: per server (the address as typed in the server list, lower-cased;
+  `singleplayer` for any local world) and per board (the objective's name),
+  the lines switched off, and whether the title and the numbers are. A line
+  is known by its score holder's name, not its text. Servers keep the holder
+  and change the text through a team prefix/suffix or a display name, so a
+  line stays off while what it says changes.
+* **How it is drawn.** A board with nothing switched off is still the game's
+  own, moved by `ScoreboardMixin` exactly as before. A board with something
+  switched off is drawn by `ScoreboardModule.render`, with the game's
+  geometry, colours and order (`Hud.displayScoreboardSidebar`), minus those
+  lines. No mixin changes: the mixin calls `nowDrawing(objective)` and then
+  cancels the game's drawing when `isEnabled()` is false, so `nowDrawing`
+  sets a one-shot flag that the very next `isEnabled()` consumes. The box is
+  measured without the hidden lines (and without the title band when the
+  title is off), so Layout (F9), dragging, scaling and the other top-right
+  modules' stacking all use the smaller board. The fifteen-line limit is the
+  game's: lines are switched off among the fifteen it would show.
+* **F3.** The game draws its sidebar under the debug screen and BlueClient's
+  HUD modules are not drawn there, so `Hud.render` draws a self-drawn board
+  there too.
+
+New: `hud/modules/ScoreboardLines` (the store), `screen/ScoreboardLinesScreen`
+(the page). Patched: `ScoreboardModule`, `VanillaScreen.pageFor` and
+`addModuleRow` (the gear is active: the module has no visible settings, so it
+was greyed out before), `Hud.render` (F3). The three Scoreboard files are
+written for 26.3; `tools/scoreboard_port.py` copies them to 26.1.2/26.2 and
+renames them to intermediary for 1.20.6–1.21.11 (names checked with
+`tools/inter.py` on 1.20.6 and 1.21.11). The `VanillaScreen` and `Hud` edits
+are made by hand in each version.
+
 ## Testing in the real game
 
     python3 mod/test/run_game.py 26.3 --scoreboard-pos "[0.0, 0.0]" --keep
@@ -280,6 +323,28 @@ The `/time set noon` hotkey was sent, and refused because the test world
 has cheats off. Stop on damage fired when the loop walked the player off a
 ledge. The error lines in the logs are the sandbox's (no Mojang services,
 no sound device, no narrator).
+
+### Scoreboard lines
+
+`python3 mod/build.py` built all ten (32–38 classes replaced, 19 added per
+jar). `patch:` shows only the members meant to change (`ScoreboardModule`:
+`measure`, `isVisible`, `height`, `vanillaPlace`, `nowDrawing`, `render`, plus
+the new members; `VanillaScreen.addModuleRow`/`pageFor`; `Hud.render`). No
+new `recompile:` review lines. In the game, with a
+`config/blueclient-scoreboard.json` switching off Bravo, Delta and Golf and
+the numbers on the test world's board (`--file`), then pause menu →
+BlueClient → search "score" → gear → click "Alpha" → back to the world:
+
+| version | board drawn without the hidden lines | page drawn, a line switched off by a click | saved |
+|---|---|---|---|
+| 26.3 | yes, same look as the game's own | yes | yes |
+| 26.1.2 | yes | yes | yes |
+| 1.21.11 | yes | yes | yes |
+| 1.20.6 | yes | yes | yes |
+
+Each joined with 0 mixin or linkage errors. 26.2, 1.21.1, 1.21.4, 1.21.5,
+1.21.8 and 1.21.10 were built from the same sources and compiled against
+their own jars. They were not started.
 
 ### Totem counter beside the armour, and "Layout" (F9)
 
