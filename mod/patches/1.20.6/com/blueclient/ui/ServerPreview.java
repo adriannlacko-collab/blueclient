@@ -45,11 +45,9 @@ import net.minecraft.class_8573;
 public final class ServerPreview {
    private static final int ROW_W = 305;
    private static final int ICON = 32;
-   /** Address box to the row's frame. */
-   private static final int GAP = 6;
-   /** The frame around the row, as the server list draws a selected one. */
-   private static final int FRAME = 2;
-   /** The row's frame to the first button under it, and between buttons moved down. */
+   /** Address box to the row. */
+   private static final int GAP = 8;
+   /** The row to the first button under it, and between buttons moved down. */
    private static final int BUTTON_GAP = 4;
    /** How long the address has to stay the same before it is pinged. */
    private static final long SETTLE_MS = 500L;
@@ -110,8 +108,8 @@ public final class ServerPreview {
 
       class_342 addressBox = box;
       class_342 nameBox = screen instanceof class_422 ? name : null;
-      int top = box.method_46427() + box.method_25364() + GAP + FRAME;
-      if (!makeRoom(screen, box, top + ICON + FRAME + BUTTON_GAP, height)) {
+      int top = box.method_46427() + box.method_25364() + GAP;
+      if (!makeRoom(screen, box, top + ICON + BUTTON_GAP, height)) {
          return;
       }
 
@@ -232,8 +230,6 @@ public final class ServerPreview {
 
       class_327 font = client.field_1772;
       int right = x + ROW_W;
-      ctx.method_25294(x - FRAME, y - FRAME, right + FRAME, y + ICON + FRAME, GREY);
-      ctx.method_25294(x - FRAME + 1, y - FRAME + 1, right + FRAME - 1, y + ICON + FRAME - 1, -16777216);
       class_2561 name;
       if (nameBox == null) {
          name = class_2561.method_43470(data.field_3761);

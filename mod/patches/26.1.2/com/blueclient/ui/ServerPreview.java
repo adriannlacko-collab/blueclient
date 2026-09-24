@@ -45,11 +45,9 @@ import net.minecraft.util.Util;
 public final class ServerPreview {
    private static final int ROW_W = 305;
    private static final int ICON = 32;
-   /** Address box to the row's frame. */
-   private static final int GAP = 6;
-   /** The frame around the row, as the server list draws a selected one. */
-   private static final int FRAME = 2;
-   /** The row's frame to the first button under it, and between buttons moved down. */
+   /** Address box to the row. */
+   private static final int GAP = 8;
+   /** The row to the first button under it, and between buttons moved down. */
    private static final int BUTTON_GAP = 4;
    /** How long the address has to stay the same before it is pinged. */
    private static final long SETTLE_MS = 500L;
@@ -110,8 +108,8 @@ public final class ServerPreview {
 
       EditBox addressBox = box;
       EditBox nameBox = screen instanceof ManageServerScreen ? name : null;
-      int top = box.getY() + box.getHeight() + GAP + FRAME;
-      if (!makeRoom(screen, box, top + ICON + FRAME + BUTTON_GAP, height)) {
+      int top = box.getY() + box.getHeight() + GAP;
+      if (!makeRoom(screen, box, top + ICON + BUTTON_GAP, height)) {
          return;
       }
 
@@ -232,8 +230,6 @@ public final class ServerPreview {
 
       Font font = client.font;
       int right = x + ROW_W;
-      ctx.fill(x - FRAME, y - FRAME, right + FRAME, y + ICON + FRAME, GREY);
-      ctx.fill(x - FRAME + 1, y - FRAME + 1, right + FRAME - 1, y + ICON + FRAME - 1, -16777216);
       Component name;
       if (nameBox == null) {
          name = Component.literal(data.ip);
