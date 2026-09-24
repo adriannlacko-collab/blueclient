@@ -3,7 +3,7 @@
   "productName": "BlueClient",
   "version": "1.11.0",
   "description": "BlueClient — a fast, focused Minecraft client launcher.",
-  "main": "src/main/main.js",
+  "main": "src/main/boot.js",
   "type": "commonjs",
   "author": "BlueClient",
   "license": "UNLICENSED",

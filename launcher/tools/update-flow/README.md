@@ -30,5 +30,22 @@ What each scenario must show:
 11. the same with that swap's host gone (a reboot): the start applies the
     bundle itself, as in 3
 
+And rescue.js, the second way to the newest version (boot.js loads it before
+anything else):
+
+R1. a start after one that never reached Home fetches the newer version at
+    once, asks, and swaps with a relaunch
+R2. an ordinary start only notes a new version — update.js has its turn
+R3. a version seen for a day over three starts is put in by rescue itself
+R4. overdue but moving Electron, and R5. overdue after two failed swaps:
+    the download is offered instead, and opened on "Download"
+R6. main.js will not load and a newer version exists: fetched and swapped
+R7. main.js will not load and nothing is newer, and R12. the same offline:
+    "could not start", with the download offered
+R8. Home painting marks the start healthy; R9. "Later" swaps nothing
+R10. boot joins a swap still waiting (writes its relaunch file) and leaves
+     one whose host is gone alone
+R11. rescue's newer() agrees with update.js's on every pair of a list
+
 The swap script itself is Windows cmd and is not run here; scenario 2 does
 its copy by hand. Run it on Windows for that half.

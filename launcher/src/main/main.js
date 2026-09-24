@@ -30,6 +30,15 @@ const install = require('./game/install');
 const companion = require('./game/companion');
 const memo = require('./game/memo');
 const update = require('./update');
+// The start's health, for the rescue in boot.js — which must never be the
+// reason this file does not load.
+const rescue = (() => {
+  try {
+    return require('./rescue');
+  } catch {
+    return { healthy() {}, expectedExit() {} };
+  }
+})();
 const stats = require('./stats');
 const ledger = require('./ledger');
 const presence = require('./presence');
@@ -630,6 +639,7 @@ app.whenReady().then(() => {
   // makes "close it and open it again" the way out of a launcher that runs
   // and shows nothing (2026-09-22).
   if (update.applyStagedAtStart(VERSION)) {
+    rescue.expectedExit();
     app.quit();
     return;
   }
@@ -1726,7 +1736,12 @@ function registerIpc() {
 
   // The update. Main does the watching, fetching and installing; the renderer
   // is handed a state to paint and one button that says go.
-  ipcMain.handle('update:check', () => update.get());
+  // Home asks this as it paints its version line: the sign rescue.js waits
+  // for that this start got going.
+  ipcMain.handle('update:check', () => {
+    rescue.healthy();
+    return update.get();
+  });
   ipcMain.handle('update:install', () => update.install());
 
   // ---- Updates early, and What's new (2026-09-11) ------------------------

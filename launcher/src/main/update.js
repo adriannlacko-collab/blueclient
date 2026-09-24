@@ -1240,6 +1240,11 @@ function applyBundle(relaunch) {
     writeAttempts({ ...readAttempts(), last: { version: staged.version, at: Date.now(), result } });
     // And in the mark, for a start that comes while it is still at work.
     markSwap(path.join(folder, STAGED_MARK), { pid: child.pid, result, at: stamp });
+    // And where boot.js looks first, before this file is even loaded, so a
+    // start joins it whichever updater's swap it is (rescue.js).
+    try {
+      require('./rescue').recordSwap({ pid: child.pid, at: stamp, result, relaunch: relaunchFlag });
+    } catch { /* the mark above still answers applyStagedAtStart */ }
     note('info ', `bundle ${staged.version}: swap running, quitting into it`);
     return true;
   } catch (error) {
