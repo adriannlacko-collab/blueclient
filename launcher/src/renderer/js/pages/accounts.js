@@ -77,7 +77,7 @@ function row(account) {
       el('div', { class: 'account-row__meta' }, [
         el('span', {
           class: `account-tag account-tag--${microsoft ? 'ms' : 'offline'}`,
-          text: microsoft ? 'MICROSOFT' : 'OFFLINE'
+          text: microsoft ? 'Microsoft' : 'Offline'
         }),
         el('span', { class: 'account-row__added', text: `Added ${dateOf(account.addedAt)}` })
       ])

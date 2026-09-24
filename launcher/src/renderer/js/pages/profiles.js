@@ -12,7 +12,7 @@ import { selectMenu } from '../ui/select.js';
 import { tabStrip } from '../ui/tabstrip.js';
 import { openVersionPicker } from '../ui/versionpicker.js';
 import { openImporter } from '../ui/importer.js';
-import { openFound } from '../ui/found.js';
+import { offerImportOnce } from '../ui/found.js';
 import { familyArt, familyName } from '../art.js';
 import { el, mount } from '../ui/dom.js';
 import { icons } from '../icons.js';
@@ -185,36 +185,23 @@ function letGoOfEditor() {
 /*
  * The first opening of Profiles offers the other launchers' profiles
  * (2026-09-18, ui/found.js). Adrian: "only popup first ever time you press
- * on profiles page." Once per copy of the launcher — `launcher.importOffered`
- * in the settings, written the moment the offer is decided, whatever is
- * pressed — and only when the scan finds something: a player with nothing
- * to bring never sees a popup, and the flag is written all the same, so the
- * Import profiles button is the way in from then on. Never for a copy that
- * has already brought profiles over (a profile carries `imported`), never
- * while this page is only being warmed for the graphics card (warmup.js
- * renders it at boot, off screen), and never if the player has moved on by
- * the time the scan answers. A scan that fails leaves the flag alone, so the
- * next opening asks again.
+ * on profiles page." Since 2026-09-24 Home asks first, the moment the first
+ * account is added — the rule itself (once per copy, only when the scan
+ * finds something) is `offerImportOnce` in ui/found.js, shared by both.
+ * Here it is never asked while this page is only being warmed for the
+ * graphics card (warmup.js renders it at boot, off screen), and nothing is
+ * shown if the player has moved on by the time the scan answers.
  */
-let offering = false;
-
 function offerImport(page) {
-  if (offering || state.settings?.launcher?.importOffered) return;
-  const decide = () => updateSettings({ launcher: { importOffered: true } }, { silent: true });
-  if (state.profiles.some((p) => p.imported)) { decide(); return; }
-  offering = true;
+  if (state.settings?.launcher?.importOffered) return;
   /* After this render is on screen — or in the warm-up host, which is the
      case to walk away from. */
-  setTimeout(async () => {
-    if (!page.isConnected || page.closest('.warmup')) { offering = false; return; }
-    let answer = null;
-    try { answer = await host.game.importScan(); } catch { answer = null; }
-    if (!answer?.ok) { offering = false; return; }
-    const found = (answer.groups || []).some((g) => g.rows.length);
-    await decide();
-    if (found && page.isConnected && state.route === 'profiles') {
-      openFound({ answer, onDone: (adopted) => { paint(); if (adopted[0]) select(adopted[0].id); } });
-    }
+  setTimeout(() => {
+    if (!page.isConnected || page.closest('.warmup')) return;
+    offerImportOnce({
+      ready: () => page.isConnected && state.route === 'profiles',
+      onDone: (adopted) => { paint(); if (adopted[0]) select(adopted[0].id); }
+    });
   }, 0);
 }
 
@@ -300,7 +287,14 @@ function paint() {
     mount(grid, el('div', { class: 'empty' }, [
       el('div', { class: 'empty__icon', html: icons.folderOpen }),
       el('p', { class: 'empty__title', text: 'No profiles yet' }),
-      el('p', { class: 'empty__text', text: 'Create a profile to choose a version and start playing.' })
+      el('p', { class: 'empty__text', text: 'A profile is a Minecraft version with its own mods and settings.' }),
+      /* The sentence's own action under it (2026-09-24), the Mods page's
+         rule from 2026-09-14: an empty page does not send the eye back up
+         to the corner to act on what it just read. */
+      el('button', { class: 'btn btn--primary btn--add empty__action', onClick: () => create() }, [
+        el('span', { html: icons.plus, style: { display: 'contents' } }),
+        el('span', { text: 'New profile' })
+      ])
     ]));
     return;
   }

@@ -571,7 +571,9 @@ function supportGroups() {
        the whole account, for anyone who wants more than a sentence. */
     group('Player count', null, [
       row('Count me as a player',
-        'Every five minutes: an anonymous id, the launcher version, Windows or not, and whether a game is open; on a launch, the Minecraft version and which features are on; when a game ends, its frame rate (the median, the 1% low, the longest frame, how long you played) and your graphics card\'s model name. Never your name, your account or your servers',
+        /* Every kind of thing still named, in two sentences instead of one
+           of sixty words (2026-09-24); the row under it has the rest. */
+        'An anonymous id, your launcher and Minecraft versions, which features are on, and how smoothly each game ran — frame rate and graphics card. Never your name, your account or your servers',
         toggle(stats.share !== false,
           (next) => updateSettings({ stats: { share: next } }), 'Count me as a player')),
       row('What BlueClient sends',

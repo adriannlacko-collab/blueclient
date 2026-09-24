@@ -94,7 +94,7 @@ export function openAddFriendModal({ onChanged } = {}) {
       busy = false;
     }
     if (!reply?.ok) {
-      say(reply?.line || "Can't reach BlueClient right now", true);
+      say(reply?.line || "Friends can't be reached right now — try again in a moment", true);
       input.focus();
       return;
     }

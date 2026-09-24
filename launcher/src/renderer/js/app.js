@@ -19,6 +19,7 @@ import { warmGraphics } from './warmup.js';
 import { avatarFor } from './avatar.js';
 import { paintAccountHead } from './skin.js';
 import { openAccountMenu, openAccountModal } from './pages/account.js';
+import { offerImportOnce } from './ui/found.js';
 
 import * as homePage from './pages/home.js';
 import * as profilesPage from './pages/profiles.js';
@@ -29,11 +30,11 @@ import * as modsPage from './pages/mods.js';
 import * as clipsPage from './pages/clips.js';
 import * as statsPage from './pages/stats.js';
 import { loadBlockIcons } from './blocks.js';
-import { capesAway } from './play.js';
+import { capesAway, spell, levelLine } from './play.js';
 
 import {
   state, subscribe, notify, initState, setRoute, applyWorldLook,
-  activeAccount, updateSettings,
+  activeAccount, updateSettings, setActiveProfile,
   upsertSession, patchSession, dropSession, gameStatus
 } from './state.js';
 
@@ -126,12 +127,44 @@ let world = null;
   paintNews();
 
   if (!activeAccount()) {
+    signingInFirst = true;
     setTimeout(() => openAccountModal(), 450);
   }
   if (isPreview) {
     setTimeout(() => toast('Preview mode — running outside Electron', 'info', 4200), 900);
   }
 })();
+
+/* ------------------------------------------------------ first sign-in */
+
+/** True from a boot with no account until the first one is added. */
+let signingInFirst = false;
+
+/**
+ * The other launchers' profiles, offered the moment a first-time player has
+ * an account (2026-09-24, ui/found.js has why it is here and not only on
+ * Profiles). It waits for the account sheet and the "Signed in" toast's
+ * moment to pass — never a dialog on top of a dialog — and only on Home,
+ * where the player is standing. What comes over becomes the profile Play
+ * starts, so their first press here is the setup they already know.
+ */
+function offerAfterSignIn() {
+  let waited = 0;
+  const clear = () => state.route === 'home' && !document.querySelector('.scrim');
+  const tick = () => {
+    if (state.route !== 'home') return;             // gone elsewhere: Profiles asks there
+    if (!clear()) {
+      waited += 300;
+      if (waited < 15000) setTimeout(tick, 300);
+      return;
+    }
+    offerImportOnce({
+      ready: clear,
+      onDone: (adopted) => { if (adopted?.[0]) setActiveProfile(adopted[0].id); }
+    });
+  };
+  setTimeout(tick, 900);
+}
 
 /* ----------------------------------------------------------- what's new */
 
@@ -584,6 +617,10 @@ function onStateChange(reason) {
 
   if (reason === 'accounts') {
     paintAccountChip();
+    if (signingInFirst && activeAccount()) {
+      signingInFirst = false;
+      offerAfterSignIn();
+    }
     if (state.route === 'home' || state.route === 'accounts') renderRoute();
     return;
   }
@@ -659,11 +696,13 @@ function wireHost() {
 
     if (next === 'playing') {
       patchSession(id, { status: 'playing', percent: 100, startedAt: startedAt || Date.now() });
+      noteLevelAtStart(id);
       // With one game up it is simply Minecraft; with two it matters which.
       toast(running > 1 ? `${profile.name} is starting` : 'Minecraft is starting', 'success');
       return;
     }
 
+    const ending = state.sessions.find((entry) => entry.id === id);
     // A crash keeps its row (2026-09-11): Home turns the running row into one
     // that says why and what to do, before the session is dropped from the
     // list — so the row is already spoken for when syncSessions prunes.
@@ -681,7 +720,7 @@ function wireHost() {
     // A launch that never got a window reports through the launch call itself;
     // only a session that died after starting is announced here.
     if (crashed && error) toast(error, 'error', 7000);
-    else if (!error) toast(running ? `${profile.name} closed` : 'Minecraft closed', 'info');
+    else if (!error) recap(id, ending, running ? `${profile.name} closed` : 'Minecraft closed');
   });
 
   host.game.onWarning(({ profile, message, details }) => {
@@ -710,6 +749,48 @@ function wireHost() {
   });
   host.window.isMaximized().then(paintMaximize);
 
+}
+
+/* ---------------------------------------------------------------- recap */
+
+/* The level each running game started at, by session, for the recap. */
+const levelAtStart = new Map();
+
+async function readLevel() {
+  try {
+    return (await host.ledger?.summary?.())?.level || null;
+  } catch {
+    return null;
+  }
+}
+
+async function noteLevelAtStart(id) {
+  const level = await readLevel();
+  if (level) levelAtStart.set(id, level.level);
+}
+
+/**
+ * What a game that just closed was worth (2026-09-24). "Minecraft closed"
+ * told a player who had just played for two hours nothing they did not know;
+ * the moment the game hands back is the one to say what the time bought —
+ * "Minecraft closed · 1h 12m played · 2h 5m to Level 8". The time is the
+ * launcher's own clock on the row; the level is the ledger's, read a moment
+ * after the exit the way Home reads it (the mod writes on its way out). A
+ * level reached in that game is left to play.js's announce, which says it
+ * with the cape; the recap then says only the time. A sitting under a
+ * minute, or a ledger that does not answer, is the plain line it always was.
+ */
+function recap(id, session, plain) {
+  const began = levelAtStart.get(id);
+  levelAtStart.delete(id);
+  const playedMs = session?.startedAt ? Date.now() - session.startedAt : 0;
+  if (playedMs < 60000) { toast(plain, 'info'); return; }
+  setTimeout(async () => {
+    const level = await readLevel();
+    const parts = [plain, `${spell(playedMs)} played`];
+    if (level && began && level.level === began) parts.push(levelLine(level));
+    toast(parts.join(' · '), 'info', 5200);
+  }, 1600);
 }
 
 /* ------------------------------------------------------------- shortcuts */

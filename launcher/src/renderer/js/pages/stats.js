@@ -158,7 +158,7 @@ async function load() {
   if (!summary?.totals || !summary.level) {
     body.replaceChildren(el('p', {
       class: 'stats__empty',
-      text: 'Your record could not be read right now. Play once with BlueClient in the game and try again.'
+      text: "Your level couldn't be loaded just now. It's still saved on this PC — check back after your next game."
     }));
     return;
   }

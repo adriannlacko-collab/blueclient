@@ -384,11 +384,21 @@ function paintMods() {
     grid.className = '';
     grid.replaceChildren(el('div', { class: 'empty' }, [
       el('div', { class: 'empty__icon', html: icons.puzzle }),
-      el('p', { class: 'empty__title', text: `${profile.name} is vanilla` }),
+      el('p', { class: 'empty__title', text: `${profile.name} plays without mods` }),
       el('p', {
         class: 'empty__text',
-        text: 'Mods need a loader. Give this profile Fabric and its mod list appears here.'
-      })
+        text: 'Turn mods on and you can add any mod from Modrinth. Your worlds and settings stay as they are.'
+      }),
+      /* "Loader" and "vanilla" were the last two words here nobody who
+         plays says (2026-09-24); the button is the profile editor's Turn
+         mods on, the same question and the same job. */
+      el('button', {
+        class: 'btn btn--primary btn--add empty__action',
+        onClick: async () => { if (await ensureModsOn(profile)) paint(); }
+      }, [
+        el('span', { html: icons.plus, style: { display: 'contents' } }),
+        el('span', { text: 'Turn mods on' })
+      ])
     ]));
     return;
   }
@@ -512,8 +522,10 @@ function card(mod) {
       el('div', { class: 'mod-card__head' }, [
         el('h3', { class: 'mod-card__name truncate', text: mod.name }),
         // The bundled stack carries no number — it installs whatever build
-        // fits the profile at launch — and "vlatest" is not a version.
-        /^d/.test(String(mod.version)) && el('span', { class: 'badge', text: `v${mod.version}` })
+        // fits the profile at launch — and "vlatest" is not a version. A
+        // digit, not the letter d: /^d/ matched nothing, so no card ever
+        // showed its number (2026-09-24).
+        /^\d/.test(String(mod.version)) && el('span', { class: 'badge', text: `v${mod.version}` })
       ]),
       el('p', { class: 'mod-card__author truncate', text: mod.author }),
       // A mod that only exists from some Minecraft on says so in place of

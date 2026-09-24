@@ -10,6 +10,7 @@ import { openAccountModal } from './account.js';
 import { openSkinsModal } from './skins.js';
 import { openBackgroundModal } from '../ui/background.js';
 import { openAddFriendModal } from '../ui/addfriend.js';
+import { openImporter } from '../ui/importer.js';
 import { openSection } from './settings.js';
 import { APP_NAME } from '../config.js';
 import { servers, adopt, primeServers, partnerLogo, formatPlayers, needsAccount } from '../partners.js';
@@ -179,17 +180,122 @@ function renderSides(layout) {
  * (fitRows) — the rows are never squeezed or clipped.
  */
 function renderContinue() {
-  refs.continueBody = el("div", { class: "side-card__body side-card__list" }, [
-    el("span", { class: "side-card__empty", text: "The servers and worlds you play show up here." })
-  ]);
+  refs.continueBody = el("div", { class: "side-card__body side-card__list" });
+  refs.continueTitle = el("h2", { class: "side-card__title", text: "Where you left off" });
+  refs.continueNote = el("span", { class: "side-card__note" });
   refs.continueCard = el("section", { class: "side-card side-card--cont", "data-block": "continue" }, [
     el("div", { class: "side-card__head" }, [
-      el("h2", { class: "side-card__title", text: "Where you left off" })
+      refs.continueTitle,
+      el("span", { class: "spacer" }),
+      refs.continueNote
     ]),
     refs.continueBody
   ]);
   fitRows(refs.continueBody);
+  paintStarter();
   return refs.continueCard;
+}
+
+/* ---------------------------------------------------------- get started */
+
+/* The import scan's answer, asked once for the launcher's life: it reads
+   every other launcher's folders, and the starter only needs to know
+   whether there is anything to bring. */
+let starterScan = null;
+
+/**
+ * Get started (2026-09-24), in the card's own place until the first game.
+ *
+ * Where you left off has nothing to list before a place has been played,
+ * and a new player's Home was a card with one grey line in it. The growth
+ * review's finding: the launcher never told a new player what it could do.
+ * So until the ledger has a place the card is a short road instead — sign
+ * in, import your setup (only when the scan found one), play, open the
+ * menu in the game, add a friend (a Microsoft account only: Friends needs
+ * one) — each row a press that does the thing, and the steps done wear a
+ * check and go to the bottom. The first place played replaces all of it
+ * with the list (fillSide), so this is never in anyone's way twice.
+ *
+ * Nothing here claims what was not measured: "done" is an account in the
+ * list, a profile marked imported, a friend on the list. The menu row is a
+ * tip, never ticked — the launcher cannot see a key pressed in the game.
+ */
+function paintStarter() {
+  const body = refs.continueBody;
+  if (!body || body._places) return;
+  const account = activeAccount();
+  const imported = state.profiles.some((p) => p.imported);
+  const found = (starterScan?.groups || []).filter((g) => g.rows.length);
+  const labels = found.map((g) => g.label.replace(/^the /i, "").replace(/ \(.*\)$/, ""));
+  const names = labels.length > 2 ? `${labels.slice(0, 2).join(", ")} and more` : labels.join(" and ");
+
+  const steps = [
+    {
+      id: "account", icon: icons.user, done: Boolean(account),
+      name: account ? `Signed in as ${account.username}` : "Sign in",
+      meta: account ? "Your account is ready" : "A Microsoft account, or just a name",
+      press: account ? null : () => openAccountModal()
+    },
+    (found.length || imported) && {
+      id: "import", icon: icons.download, done: imported,
+      name: imported ? "Your setup is imported" : "Import your setup",
+      meta: imported ? "Profiles, mods and settings imported" : `From ${names}`,
+      press: imported ? null : () => openImporter({ answer: starterScan, onDone: (adopted) => {
+        if (adopted?.[0]) setActiveProfile(adopted[0].id);
+        paintStarter();
+      } })
+    },
+    {
+      id: "play", icon: icons.play, done: false,
+      name: "Play your first game",
+      meta: "Your servers and worlds show up here after",
+      press: () => launchActive()
+    },
+    {
+      id: "menu", icon: icons.bolt, done: false, tip: true,
+      name: "Press Right Shift in the game",
+      meta: "Minimap, zoom, waypoints and more"
+    },
+    account?.type === "microsoft" && {
+      id: "friend", icon: icons.userPlus, done: Boolean(lastFriends?.friends?.length),
+      name: lastFriends?.friends?.length ? "You have friends here" : "Add a friend",
+      meta: lastFriends?.friends?.length ? "See where they are on the right" : "Join their server from Home in one press",
+      press: lastFriends?.friends?.length ? null : () => openAddFriendModal({ onChanged: () => { syncFriends(); paintStarter(); } })
+    }
+  ].filter(Boolean);
+
+  /* Still to do first, in the order above; done at the foot, so the rows the
+     card has room for are the ones worth pressing. */
+  const ordered = [...steps.filter((x) => !x.done), ...steps.filter((x) => x.done)];
+  const todo = steps.filter((x) => !x.tip);
+  refs.continueTitle.textContent = "Get started";
+  refs.continueNote.textContent = `${todo.filter((x) => x.done).length} of ${todo.length} done`;
+  body.replaceChildren(...ordered.map(starterRow));
+  body._fit?.();
+
+  if (!starterScan) {
+    starterScan = { groups: [] };
+    Promise.resolve(host.game?.importScan?.()).then((answer) => {
+      if (answer?.ok) starterScan = answer;
+      if (refs.continueBody?.isConnected) paintStarter();
+    }).catch(() => {});
+  }
+}
+
+function starterRow(step) {
+  const inner = [
+    el("span", { class: `cont-row__icon${step.done ? " is-done" : ""}`, html: step.done ? icons.check : step.icon }),
+    el("span", { class: "stack truncate" }, [
+      el("span", { class: "truncate cont-row__name", text: step.name }),
+      el("span", { class: "truncate cont-row__meta", text: step.meta })
+    ])
+  ];
+  const cls = `cont-row starter-row${step.done ? " is-done" : ""}${step.tip ? " is-tip" : ""}`;
+  if (!step.press) return el("div", { class: cls }, inner);
+  return el("button", { class: `${cls} cont-row--press`, onClick: step.press }, [
+    ...inner,
+    el("span", { class: "cont-row__glyph", html: icons.chevronRight, "aria-hidden": "true" })
+  ]);
 }
 
 /** How many places Where you left off lists at most. */
@@ -251,7 +357,10 @@ function renderFriends() {
 function fitRows(list) {
   const fit = () => {
     const rows = [...list.children].filter((n) => n.classList.contains("cont-row"));
-    if (!rows.length) return;
+    /* Not before the card is laid out (2026-09-24): Get started paints while
+       Home is still being built, and a list with no height fitted one row
+       and hid the rest. */
+    if (!rows.length || !list.isConnected || !list.clientHeight) return;
     const style = getComputedStyle(list);
     const gap = parseFloat(style.rowGap) || 0;
     const floor = parseFloat(getComputedStyle(rows[0]).minHeight) || 52;
@@ -493,7 +602,7 @@ function partnerRow(server) {
     class: `partner-row${locked ? ' is-locked' : ''}`,
     title: locked
       ? `${server.name} checks accounts with Mojang — sign in with a Microsoft account to join`
-      : [server.about, 'press to start and join'].filter(Boolean).join(' — '),
+      : [server.about, 'Play and join'].filter(Boolean).join(' — '),
     onClick: () => {
       if (locked) {
         toast(`${server.name} checks accounts with Mojang — sign in with a Microsoft account to join it`, 'info', 5000);
@@ -698,7 +807,7 @@ function updateLine(update) {
       text: 'Restart to update',
       onClick: async () => {
         const result = await host.update.install().catch(() => null);
-        if (!result?.ok) toast('The update could not be started. It will go in next time BlueClient closes.');
+        if (!result?.ok) toast("Couldn't restart to update. It installs by itself the next time you close BlueClient.", 'error', 7000);
       }
     });
   }
@@ -728,7 +837,10 @@ function renderPlayer(account) {
   return el('div', { class: 'player' }, [
     el('div', { class: 'nameplate' }, [
       el('span', { class: 'nameplate__name truncate', text: account?.username || 'Not signed in' }),
-      account && el('span', { class: 'nameplate__dot', 'aria-label': 'Online' })
+      /* The green dot is what friends see — and only a Microsoft account has
+         friends to see it (2026-09-24): on an offline name it claimed a
+         presence nobody could see. */
+      account?.type === 'microsoft' && el('span', { class: 'nameplate__dot', 'aria-label': 'Online' })
     ]),
     characterFor(account)
   ]);
@@ -1294,13 +1406,18 @@ function fillSide(places) {
   if (!places.length || !refs.continueBody) return;
 
   /* ---- Where you left off ------------------------------------------------
-     Only a server becomes a button, because only a server can be walked back
-     into — the game takes --quickPlayMultiplayer and nothing equivalent is
-     wired for a save (see launcher.js). A world gets the same row without
-     the press. A control that says Continue and then does not is exactly what
-     the rule at the top of CLAUDE.md forbids. The newest place keeps its
-     Continue button; a server further down is the row itself, pressable
-     like a featured row, with the play glyph under the pointer. */
+     A server is a button from the first paint: the game takes
+     --quickPlayMultiplayer. A world became one on 2026-09-24 — Worlds has
+     opened a save with --quickPlaySingleplayer since 2026-09-11, and the
+     ledger names the world but not the profile it lives in, so the row is
+     drawn quiet and made a press once the world list has answered with
+     exactly where that world is (pressWorlds). One that cannot be found stays
+     a row that says so and nothing more: a control that says Continue and
+     then does not is exactly what the rule at the top of CLAUDE.md forbids.
+     The newest place keeps its Continue button; a place further down is the
+     row itself, pressable like a featured row, with the play glyph under the
+     pointer. */
+  const worldRows = [];
   const rows = places.slice(0, RECENT_ROWS).map((place, index) => {
     const facts = [spell(place.playedMs), when(place.lastSeen)]
       .filter(Boolean).join(" · ");
@@ -1319,7 +1436,11 @@ function fillSide(places) {
       ])
     ];
 
-    if (place.kind !== "server") return el("div", { class: "cont-row" }, body);
+    if (place.kind !== "server") {
+      const row = el("div", { class: "cont-row" }, body);
+      worldRows.push({ row, body, name, index });
+      return row;
+    }
     if (index === 0) {
       return el("div", { class: "cont-row" }, [
         ...body,
@@ -1343,8 +1464,47 @@ function fillSide(places) {
     ]);
   });
 
+  refs.continueBody._places = true;
+  refs.continueTitle.textContent = "Where you left off";
+  refs.continueNote.textContent = "";
   refs.continueBody.replaceChildren(...rows);
   refs.continueBody._fit?.();
+  if (worldRows.length) pressWorlds(worldRows);
+}
+
+/**
+ * The world rows made presses, once the world list says where each one is
+ * (2026-09-24). The ledger keys a world by its name; the list has every save
+ * of every profile, so a name is matched to the save of that name in a
+ * profile that still exists, the most recently played if two share it.
+ */
+async function pressWorlds(worldRows) {
+  const body = refs.continueBody;
+  let list = null;
+  try { list = await host.worlds?.list?.(); } catch { list = null; }
+  if (!list?.ok || refs.continueBody !== body || !body.isConnected) return;
+  const owned = (list.worlds || []).filter((w) => state.profiles.some((p) => p.id === w.profileId));
+  for (const { row, body: inner, name, index } of worldRows) {
+    const world = owned
+      .filter((w) => clean(w.name) === name)
+      .sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0))[0];
+    if (!world || !row.isConnected) continue;
+    const title = `Start the game and open ${name}`;
+    const press = () => launchWorld(world, name);
+    row.replaceWith(index === 0
+      ? el("div", { class: "cont-row" }, [
+          ...inner,
+          el("button", { class: "btn btn--confirm cont-row__go", title, onClick: press }, [
+            el("span", { html: icons.play, style: { display: "contents" } }),
+            el("span", { text: "Continue" })
+          ])
+        ])
+      : el("button", { class: "cont-row cont-row--press", title, onClick: press }, [
+          ...inner,
+          el("span", { class: "cont-row__glyph", html: icons.play, "aria-hidden": "true" })
+        ]));
+  }
+  body._fit?.();
 }
 
 /** A world's name as the game shows it, without the § colour codes a server's world can carry. */
@@ -1378,6 +1538,8 @@ async function syncFriends() {
   if (refs.friendsCard !== card || !card.isConnected) return;   // left Home while main asked
   if (answer?.ok) lastFriends = { ...answer, who };
   paintFriends(answer || { ok: false, reason: "unreachable" });
+  // Get started ticks its friend row off the same answer.
+  if (answer?.ok) paintStarter();
 }
 
 /** "On bluemc.org", "In a world", "Last online 3 h ago" — the game's own words (screen/FriendsScreen.java). */
@@ -1404,13 +1566,13 @@ function paintFriends(answer) {
     /* A site that cannot be reached keeps the rows it had and says so in
        the head; anything else is one plain line in the body. */
     if (answer.reason === "unreachable" && lastFriends) {
-      note.textContent = "Can't reach BlueClient";
+      note.textContent = "Can't refresh right now";
       return;
     }
     const line = answer.reason === "offline-account" ? "Sign in with a Microsoft account to see your friends."
       : answer.reason === "no-account" ? "Add an account to see your friends."
-      : answer.reason === "not-signed-in" ? "Friends could not sign you in — start the game once and try again."
-      : "BlueClient can't be reached right now.";
+      : answer.reason === "not-signed-in" ? "Start a game once to turn on Friends."
+      : "Friends can't be reached right now. They'll be back shortly.";
     note.textContent = "";
     body._painted = null;
     body.replaceChildren(el("span", { class: "side-card__empty", text: line }));
@@ -1425,7 +1587,9 @@ function paintFriends(answer) {
 
   if (!friends.length) {
     body._painted = null;
-    body.replaceChildren(el("span", { class: "side-card__empty", text: "Add friends in the game — Friends is on the title screen." }));
+    /* It said "Add friends in the game" under an Add friends button that
+       has been right above it since 2026-09-21 (2026-09-24). */
+    body.replaceChildren(el("span", { class: "side-card__empty", text: "No friends here yet. Add someone by their Minecraft name and join them in one press." }));
     return;
   }
 
@@ -1713,7 +1877,7 @@ async function launchActive(join = null) {
   if (pressing || Date.now() - launchedAt < PRESS_SETTLE_MS) return;
   const profile = activeProfile();
   if (!profile && activeAccount()) {
-    toast('Select a profile first', 'error');
+    toast('Choose a profile to play', 'info');
     setRoute('profiles');
     return;
   }
@@ -1727,6 +1891,29 @@ async function launchActive(join = null) {
   if (!go) return;
   launchedAt = Date.now();
   await startGame(profile, join);
+}
+
+/**
+ * A world from Where you left off (2026-09-24): its own profile, straight
+ * into the save — Worlds' Play, from Home. Play's one-press rule and its
+ * checks, with the world's profile in the active one's place.
+ */
+async function launchWorld(world, name) {
+  if (pressing || Date.now() - launchedAt < PRESS_SETTLE_MS) return;
+  const profile = state.profiles.find((p) => p.id === world.profileId);
+  if (!profile) return;
+  pressing = true;
+  let go;
+  try {
+    go = await launchChecks(profile);
+  } finally {
+    pressing = false;
+  }
+  if (!go) return;
+  launchedAt = Date.now();
+  if (await startGame(profile, null, { world: world.folder })) {
+    toast(`${profile.name} will open ${name} as soon as it is up`, 'info', 4000);
+  }
 }
 
 /**
@@ -1765,7 +1952,7 @@ async function startGame(profile, join = null, extra = {}) {
   if (result?.ok) {
     touchProfile(profile.id);
     if (join) toast(`${profile.name} will join ${join} as soon as it is up`, 'info', 4000);
-    return;
+    return true;
   }
   if (result?.cancelled) return;
   // A JVM that died at once has its row on Home saying why (noteCrash); a

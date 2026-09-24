@@ -2686,6 +2686,13 @@
 .cont-row > .stack { flex: 1 1 auto; }
 .cont-row__go { flex: none; height: 40px; }
 
+/* Get started (2026-09-24, pages/home.js paintStarter): the same rows, a
+   step done wearing the confirm check and stepping back, and a press
+   wearing the chevron where a place wears the play glyph. */
+.starter-row .cont-row__icon.is-done { color: var(--confirm); }
+.starter-row.is-done .cont-row__name { color: var(--text-2); }
+.starter-row.is-done { background-color: transparent; }
+
 /* ---- Your play ---------------------------------------------------------
    Seven bars, the last seven days, today at the right (2026-09-12; it was
    Monday to Sunday from 2026-09-10). The note that stood here said day-bars

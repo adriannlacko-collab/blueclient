@@ -41,7 +41,7 @@ export function openAccountModal() {
         el('span', { class: 'choice__icon', html: icons.user }),
         el('div', { class: 'stack' }, [
           el('span', { class: 'choice__title', text: 'Offline account' }),
-          el('span', { class: 'choice__sub', text: 'Just a username. Servers that check ownership will turn it down' })
+          el('span', { class: 'choice__sub', text: 'Just a username. Servers that check ownership will turn it down.' })
         ]),
         el('span', { class: 'spacer' }),
         el('span', { class: 'choice__caret', html: icons.chevronRight })

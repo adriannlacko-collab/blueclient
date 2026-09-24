@@ -869,7 +869,13 @@ export function javaFor(version) {
      card was a lower bound a Java 21 cannot meet (2026-09-21). */
   if (first !== 1 && major >= 26) return 'Java 25';
   if (major >= 21) return 'Java 21+';
+  /* 1.20.5 moved to Java 21 mid-line, and 1.17 was the one release on Java
+     16 (2026-09-24): the second segment alone called both a Java too old to
+     start them. */
+  const patch = first === 1 ? Number(parts[2]) || 0 : 0;
+  if (major === 20 && patch >= 5) return 'Java 21+';
   if (major >= 18) return 'Java 17+';
+  if (major === 17) return 'Java 16+';
   return 'Java 8+';
 }
 
