@@ -699,12 +699,78 @@ function resourcesStale(version) {
    mark that no longer applies — the ordinary case after a close that swapped,
    where the launcher now IS that version — is wiped with its folder.
 
-   The mark is taken (unlinked) before the script is started, so a second
-   instance started in those seconds finds nothing to apply; the failure
-   count that settleLastAttempt keeps still ends a swap that will not take
-   after two tries, the same as from a close. */
+   The failure count that settleLastAttempt keeps still ends a swap that will
+   not take after two tries, the same as from a close.
+
+   A start can also land on a swap that is still going (2026-09-24). "If you
+   close it without pressing Restart to update, the next time you open it it
+   takes so long" — and the ordinary way to meet that is to close the
+   launcher and open it again straight away, which is exactly what a player
+   who has been told the update goes in on the close will do. The close's
+   script was still waiting for BlueClient.exe to be gone, and the launcher
+   just opened IS BlueClient.exe, so it waited for that; that launcher found
+   the mark still
+   newer than itself, started a second script of its own and quit into it.
+   Each script's host is a BlueClient.exe as well, and each script waits for
+   every BlueClient.exe but its own host — so the two waited on each other
+   until the first gave up at five minutes, and only then did the second copy
+   the files and bring the launcher back. Five minutes of nothing, after a
+   click, on the one path the launcher tells players to take.
+
+   So the script that is running says so. applyBundle writes it into the mark
+   (SWAP_KEY: its host's process id, its result file, when it began), and a
+   start that finds one still alive starts nothing: it asks that script to
+   bring the launcher back when it is done (the relaunch file, which every
+   script now reads after its copy — "Restart to update" and the start both
+   simply write it first) and quits, and the swap goes on the moment it is
+   gone. A second click in those seconds does the same, where it used to
+   open the old version and hold the script up behind it. */
 
 const STAGED_MARK = 'staged.json';
+
+/** The mark's record of the swap script running for it (applyBundle). */
+const SWAP_KEY = 'swap';
+
+/** Beside the mark: a script that finds this after its copy starts the launcher. */
+const RELAUNCH_FLAG = 'relaunch';
+
+/*
+ * The longest a swap script can still be at work: its wait gives up after
+ * three hundred rounds of tasklist and a second's ping, and its copy after
+ * thirty more — measured at well under ten minutes on a slow machine. Past
+ * this, a mark's script is taken to be dead whatever its process id says,
+ * since ids are handed out again.
+ */
+const SWAP_LIFE_MS = 10 * 60 * 1000;
+
+/** Is `pid` a process that exists? EPERM is one that exists and is not ours to signal. */
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return Boolean(error && error.code === 'EPERM');
+  }
+}
+
+/**
+ * Is the swap script a mark names still running?
+ *
+ * Its host's process id is the evidence, and the only one: a script that
+ * wrote its result is finished, one from before this boot or older than any
+ * script lives went down without writing it, and a record with no id — the
+ * spawn gave none, or an older launcher wrote the mark — proves nothing, so
+ * the start goes on as it always did. Pure but for `alive` and the clock,
+ * which are handed in for tools/update-flow.
+ */
+function swapRunning(found, { now = Date.now(), bootedAt = now - require('os').uptime() * 1000, alive = processAlive } = {}) {
+  const swap = found && found.swap;
+  if (!swap || !swap.pid || !swap.at) return false;
+  if (swap.result && fs.existsSync(swap.result)) return false;
+  if (swap.at < bootedAt || now - swap.at > SWAP_LIFE_MS) return false;
+  return alive(swap.pid);
+}
 
 /**
  * The newest staged bundle under the staging root, by its mark, or null.
@@ -730,7 +796,8 @@ function stagedOnDisk(root) {
           at, dir, mark, folder: path.join(root, entry),
           version: String(info?.version || '').trim(),
           electron: String(info?.electron || '').trim(),
-          prerelease: Boolean(info?.prerelease)
+          prerelease: Boolean(info?.prerelease),
+          swap: info?.[SWAP_KEY] || null
         };
       }
     } catch {
@@ -760,18 +827,37 @@ function stagedStaleReason(found, currentVersion, electron, givenUp, writable) {
  */
 function applyStagedAtStart(currentVersion) {
   if (!(app.isPackaged && process.platform === 'win32')) return false;
-  settleLastAttempt(currentVersion);
   const found = stagedOnDisk(stagingDir());
+
+  // A swap still going — the close just before this start, as a rule. It is
+  // waiting for this launcher to be gone, so the way to the new version is
+  // to go, having asked it to bring the launcher back; a second script here
+  // would wait on the first while the first waits on it. Asked before the
+  // settle, which would read that script's missing result as a swap that
+  // did not take.
+  if (found && swapRunning(found)) {
+    try {
+      fs.writeFileSync(path.join(found.folder, RELAUNCH_FLAG), '');
+    } catch (error) {
+      // Nothing to hand over with: open on this version and let the swap
+      // wait for the close, as it would have.
+      note('warn ', `bundle ${found.version}: a swap is running but it could not be asked to relaunch (${error && error.code})`);
+      return false;
+    }
+    // Finished in the meantime, perhaps before it could see the request —
+    // then nobody is coming back for this launcher, and it opens.
+    if (!found.swap.result || !fs.existsSync(found.swap.result)) {
+      note('info ', `bundle ${found.version}: an earlier swap is still running — handing over to it, it relaunches when done`);
+      return true;
+    }
+  }
+
+  settleLastAttempt(currentVersion);
   if (!found) return false;
   const why = stagedStaleReason(found, currentVersion, process.versions.electron, swapGivenUp(found.version), installWritable());
   if (why) {
     note('info ', `bundle ${found.version} staged by an earlier run is not going in: ${why}`);
     wipe(found.folder);
-    return false;
-  }
-  try {
-    fs.unlinkSync(found.mark);
-  } catch {
     return false;
   }
   staged = { dir: found.dir, version: found.version, prerelease: found.prerelease };
@@ -975,6 +1061,24 @@ async function checkBundle(currentVersion) {
 }
 
 /**
+ * Write the running swap into its bundle's mark (SWAP_KEY). Beside the file
+ * and renamed over it, like writeAttempts: a mark cut short would read as no
+ * staged bundle at all. Never throws — without it a start only goes back to
+ * what it did before there was one.
+ */
+function markSwap(mark, swap) {
+  const tmp = `${mark}.tmp`;
+  try {
+    const info = JSON.parse(fs.readFileSync(mark, 'utf8'));
+    fs.writeFileSync(tmp, JSON.stringify({ ...info, [SWAP_KEY]: swap }));
+    fs.renameSync(tmp, mark);
+  } catch (error) {
+    note('warn ', `could not write the running swap into its mark: ${error && error.message}`);
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to tidy */ }
+  }
+}
+
+/**
  * Put a staged bundle in, and say whether that started.
  *
  * The files being replaced belong to a running process — Windows holds
@@ -992,7 +1096,10 @@ async function checkBundle(currentVersion) {
  *
  * `relaunch` is the difference between the two ways in. "Restart to update" is
  * a player asking for it now and expecting the launcher back; a swap that goes
- * in because they closed the launcher must not reopen it under them.
+ * in because they closed the launcher must not reopen it under them. It is
+ * a file beside the mark rather than a line in the script (2026-09-24), so
+ * that a start arriving while a close's script is still at work can ask for
+ * the relaunch too, instead of starting a second script (applyStagedAtStart).
  */
 function applyBundle(relaunch) {
   if (swapScheduled) return true;
@@ -1008,6 +1115,8 @@ function applyBundle(relaunch) {
   // next check wipes before this launcher has read it.
   const result = path.join(app.getPath('userData'), `swap-${stamp}.result`);
   const said = (what) => `echo ${what}> "${result}"`;
+  const folder = path.dirname(staged.dir);
+  const relaunchFlag = path.join(folder, RELAUNCH_FLAG);
 
   /* Written without parenthesised blocks on purpose: cmd expands %tries%
      when it parses a block, not when it runs it, and a retry loop inside one
@@ -1071,9 +1180,14 @@ function applyBundle(relaunch) {
     `robocopy "${path.join(staged.dir, 'resources')}" "${path.join(resources, 'resources')}" /mir /njh /njs /ndl /nc /ns /np >nul`,
     `if errorlevel 8 ${said('failed-resources: robocopy failed (errorlevel %errorlevel%)')}`,
     'if errorlevel 8 exit /b 1',
-    said('ok')
+    said('ok'),
+    /* After the result, never before: a start that asks for the relaunch
+       writes the file and then looks for the result, so either it sees the
+       result and opens by itself, or this line sees its file. Both at once
+       brings up a second launcher, which the single-instance lock turns into
+       a focus of the first. */
+    `if exist "${relaunchFlag}" start "" "${exe}"`
   ];
-  if (relaunch) lines.push(`start "" "${exe}"`);
 
   /* Started through this launcher's own exe, running as plain node, and the
      batch hidden underneath it — because a black command prompt used to open
@@ -1107,6 +1221,10 @@ function applyBundle(relaunch) {
   ];
 
   try {
+    // Asked for now, or not at all: a file left from an earlier attempt in
+    // this folder must not bring the launcher back up after a close.
+    if (relaunch) fs.writeFileSync(relaunchFlag, '');
+    else fs.rmSync(relaunchFlag, { force: true });
     fs.writeFileSync(script, lines.join('\r\n') + '\r\n');
     fs.writeFileSync(host, hostLines.join('\n'));
     const child = spawn(exe, [host], {
@@ -1120,6 +1238,8 @@ function applyBundle(relaunch) {
     // What was attempted, for the next start to judge (settleLastAttempt).
     // The failure counts already held are kept.
     writeAttempts({ ...readAttempts(), last: { version: staged.version, at: Date.now(), result } });
+    // And in the mark, for a start that comes while it is still at work.
+    markSwap(path.join(folder, STAGED_MARK), { pid: child.pid, result, at: stamp });
     note('info ', `bundle ${staged.version}: swap running, quitting into it`);
     return true;
   } catch (error) {
@@ -1418,6 +1538,8 @@ module.exports = {
   bundleSource, pickRelease, compareVersions, RELEASES_API, BUNDLE_BASE,
   /* For tools/check-staged-start.js (2026-09-22). */
   stagedOnDisk, stagedStaleReason, STAGED_MARK,
+  /* For the start-during-a-swap scenario in tools/update-flow (2026-09-24). */
+  swapRunning, RELAUNCH_FLAG,
   /* For the swap-attempt check in the same tool (2026-09-20). */
   settleLastAttempt, swapGivenUp, SWAP_GIVE_UP, installWritable
 };

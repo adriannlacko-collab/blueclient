@@ -23,6 +23,12 @@ What each scenario must show:
 5. a bad sha512, 6. a release that moves Electron, 7. a dropped download and
 9. no network all fall back to the installer channel, leaving nothing staged
 8. "Get updates early" flipped during a look stages once, cleanly
+10. closed without "Restart to update" and opened again while that close's
+    swap is still waiting: the start starts no second script, asks the one
+    running to relaunch and quits; once it has, the start on the new version
+    clears the folder
+11. the same with that swap's host gone (a reboot): the start applies the
+    bundle itself, as in 3
 
 The swap script itself is Windows cmd and is not run here; scenario 2 does
 its copy by hand. Run it on Windows for that half.

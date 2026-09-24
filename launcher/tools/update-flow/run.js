@@ -43,7 +43,9 @@ const cpShim = {
     if (/tar\.exe$/i.test(cmd)) return realCp.spawn('tar', args, { stdio: 'ignore' });
     if (cmd === EXE) {
       events.hosts.push({ args, runAsNode: opts && opts.env && opts.env.ELECTRON_RUN_AS_NODE });
-      const child = new EventEmitter(); child.unref = () => {}; return child;
+      // HOST_PID stands in for the swap host's process id: a live process
+      // plays a script still at work, and none a spawn that reported no id.
+      const child = new EventEmitter(); child.unref = () => {}; child.pid = Number(process.env.HOST_PID) || undefined; return child;
     }
     return realCp.spawn(cmd, args, opts);
   }
@@ -65,12 +67,34 @@ const until = async (fn, ms = 15000) => {
 };
 const logTail = () => { try { return fs.readFileSync(path.join(UD, 'update.log'), 'utf8').trim().split('\n').map((l) => l.replace(/^\S+\s+/, '')); } catch { return []; } };
 const out = (o) => console.log('RESULT ' + JSON.stringify(o));
+// Whether the script written for this run brings the launcher back: it
+// starts the exe only when the relaunch file beside the mark exists.
+const relaunches = (script) => {
+  const m = /if exist "([^"]+)" start "" /.exec(script);
+  return Boolean(m && fs.existsSync(m[1]));
+};
+const marksNow = () => {
+  const root = path.join(UD, 'update-bundle');
+  const dirs = fs.existsSync(root) ? fs.readdirSync(root) : [];
+  return dirs.map((d) => { try { return JSON.parse(fs.readFileSync(path.join(root, d, 'staged.json'), 'utf8')); } catch { return null; } }).filter(Boolean);
+};
 
 (async () => {
   if (scenario === 'start-applies') {
     const going = update.applyStagedAtStart(CUR);
     const script = events.hosts.length ? fs.readFileSync(events.hosts[0].args[0].replace(/\.js$/, '.cmd'), 'utf8') : '';
-    out({ going, hosts: events.hosts.length, relaunch: /start "" /.test(script), log: logTail() });
+    const root = path.join(UD, 'update-bundle');
+    const asked = (fs.existsSync(root) ? fs.readdirSync(root) : []).some((d) => fs.existsSync(path.join(root, d, update.RELAUNCH_FLAG)));
+    out({ going, hosts: events.hosts.length, relaunch: script ? relaunches(script) : false, relaunchAsked: asked, log: logTail() });
+    return process.exit(0);
+  }
+  if (scenario === 'close') {
+    // Staged, then closed with the window's X: before-quit and nothing else.
+    update.start(() => {}, CUR);
+    await until(() => update.get().phase === 'ready', Number(process.env.WAIT_MS || 4000));
+    for (const fn of events.beforeQuit) fn();
+    const script = events.hosts.length ? fs.readFileSync(events.hosts[0].args[0].replace(/\.js$/, '.cmd'), 'utf8') : '';
+    out({ phase: update.get().phase, hosts: events.hosts.length, relaunch: script ? relaunches(script) : false, swap: (marksNow()[0] || {}).swap || null });
     return process.exit(0);
   }
   update.start((s) => events.publishes.push(s.phase + ':' + s.percent), CUR);
@@ -89,7 +113,7 @@ const out = (o) => console.log('RESULT ' + JSON.stringify(o));
     const script = fs.readFileSync(events.hosts[0].args[0].replace(/\.js$/, '.cmd'), 'utf8');
     Object.assign(result, {
       install: answer, quit: events.quit, hosts: events.hosts.length, runAsNode: events.hosts[0].runAsNode,
-      copiesAsar: script.includes(`${path.join(INSTALL, 'app.asar')}`), robocopy: /robocopy .*\/mir/.test(script), relaunch: /start "" /.test(script),
+      copiesAsar: script.includes(`${path.join(INSTALL, 'app.asar')}`), robocopy: /robocopy .*\/mir/.test(script), relaunch: relaunches(script),
       attempts: JSON.parse(fs.readFileSync(path.join(UD, 'update-attempts.json'), 'utf8')),
       stagedDir: marks.length ? path.join(root, staged[0], 'new') : null, resultFile: JSON.parse(fs.readFileSync(path.join(UD, 'update-attempts.json'), 'utf8')).last.result
     });

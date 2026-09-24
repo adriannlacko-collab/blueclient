@@ -36,5 +36,18 @@ ELECTRON_RUN_AS_NODE=1 WAIT_MS=6000 $ELECTRON -e "
 setTimeout(()=>{ const u=require(process.env.UPDATE_JS); u.recheck().then((r)=>console.log('RECHECK '+JSON.stringify(r))); }, 100);
 process.argv=[process.argv[0],'$S/run.js','look','$W/g','1.11.0']; require('$S/run.js');" 2>&1 | grep -E "RESULT|RECHECK|CRASH"
 echo "   server counts: $(curl -s http://127.0.0.1:$PORT/__counts)"
+echo "== 10. closed without Restart to update, opened again while that swap still waits"; mode ok; fresh j
+sleep 60 & LIVE=$!
+HOST_PID=$LIVE run close $W/j 1.11.0
+run start-applies $W/j 1.11.0
+echo "   the script finishes: result ok, and the relaunch file it reads is $( [ -f "$(dirname $(ls $W/j/userData/update-bundle/*/staged.json))/relaunch" ] && echo there || echo missing )"
+D=$(ls -d $W/j/userData/update-bundle/*/new); cp $D/app.asar $W/j/install/app.asar; rm -rf $W/j/install/resources; cp -r $D/resources $W/j/install/resources
+R=$(python3 -c "import json;print(json.load(open('$W/j/userData/update-attempts.json'))['last']['result'])"); echo ok > "$R"
+run start-applies $W/j 1.12.0
+echo "   staging left: $(ls $W/j/userData/update-bundle 2>/dev/null | grep -v '^swap-' | wc -l)"
+echo "== 11. the same, but that swap's host is gone (a reboot): the start applies it itself"; fresh k
+HOST_PID=$LIVE run close $W/k 1.11.0 >/dev/null
+kill $LIVE 2>/dev/null; wait $LIVE 2>/dev/null
+run start-applies $W/k 1.11.0
 kill $SRV; sleep 0.3
 echo "== 9. offline"; fresh h; run look $W/h 1.11.0
