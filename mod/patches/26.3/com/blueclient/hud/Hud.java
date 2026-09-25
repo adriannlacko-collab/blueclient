@@ -61,6 +61,7 @@ import com.blueclient.ui.Gui;
 import com.blueclient.ui.Huds;
 import com.blueclient.ui.MenuHint;
 import com.blueclient.ui.Screens;
+import com.blueclient.ui.ServerPreview;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -199,6 +200,8 @@ public final class Hud {
       }
 
       layOutDefaults();
+      // Not a module: the server row under Add Server / Direct Connection, hooked here as this runs once at start.
+      ServerPreview.install();
    }
 
    private static void layOutDefaults() {

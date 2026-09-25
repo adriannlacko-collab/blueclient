@@ -214,6 +214,38 @@ renames them to intermediary for 1.20.6–1.21.11 (names checked with
 `tools/inter.py` on 1.20.6 and 1.21.11). The `VanillaScreen` and `Hud` edits
 are made by hand in each version.
 
+## New class: server preview
+
+`ui/ServerPreview` draws the server an address points at under the **Server
+Address** box of Add Server / Edit Server (`ManageServerScreen`) and Direct
+Connection (`DirectJoinServerScreen`), as the server list draws a row: icon,
+name, MOTD (two lines), player count or version, and ping bars. `Hud.register`
+installs it; that is the only change to an existing class.
+
+* **When.** The row appears once the host part of the address has a dot that
+  is neither its first nor its last character (`play.example.net`,
+  `1.2.3.4`, `1.2.3.4:25566`) and the game would accept the address. It
+  goes away as soon as the dot does. The name is the Server Name box (or
+  "Minecraft Server" when that is empty); on Direct Connection it is the
+  address.
+* **Pinging.** Half a second after the typing stops (at once for an address
+  already in the box when the screen opens), through the game's own
+  `ServerStatusPinger`, on one daemon thread for the name lookup, as the
+  server list does. Typing again or leaving the screen cancels it. The icon
+  goes to its own texture (`blueclient/preview`), so the list's icon for the
+  same address is never released.
+* **Unreachable.** The pinger gives up without changing the row's state (the
+  list keeps animating the bars then); the MOTD already reads "Can't connect
+  to server", and the row shows the red X for it.
+* **Room.** The widgets under the address box move down just enough to clear
+  the row, one under the other 4 px apart. If the last would then leave the
+  screen, nothing moves and no row is drawn. At 1280×720 on GUI scale 3
+  (240 px high, the tightest the game allows at that size) both screens fit.
+
+The 26.x files are the same; the seven 1.2x files are the same apart from the
+`ResourceLocation` factory (1.20.6 has no `fromNamespaceAndPath`), with the
+intermediary names the mod's own `DiscoverScreen` rows use.
+
 ## Testing in the real game
 
     python3 mod/test/run_game.py 26.3 --scoreboard-pos "[0.0, 0.0]" --keep
@@ -345,6 +377,24 @@ BlueClient → search "score" → gear → click "Alpha" → back to the world:
 Each joined with 0 mixin or linkage errors. 26.2, 1.21.1, 1.21.4, 1.21.5,
 1.21.8 and 1.21.10 were built from the same sources and compiled against
 their own jars. They were not started.
+
+### Server preview (new class)
+
+`python3 mod/build.py` builds all ten with `ServerPreview` added (two new
+class files per jar) and `Hud` patched; `patch:` shows `Hud.register` plus
+the earlier totem-counter members as the only changes in `Hud`. In the game
+at 1280×720 on GUI scale 3, with a local dedicated server of the same
+version on 127.0.0.1 (a two-line coloured MOTD, 42 slots):
+
+| version | Add Server, `127.0.0.1` | Direct Connection | no dot yet (`127`) | refused (`127.0.0.12`) / unknown host (`example.com`) |
+|---|---|---|---|---|
+| 26.3 | name, both MOTD lines, 0/42, green bars | same, named after the address; prefilled address pinged on open | no row | "Can't connect to server" and the X |
+| 1.21.11 | same; empty name shows "Minecraft Server" | — | — | — |
+| 1.20.6 | same (Edit Server Info) | same; Join Server then joined the server | — | — |
+
+The buttons under the address box moved down and still fit the 240 px
+screen on both screens. 0 mixin or linkage errors; the only error lines are
+the sandbox's (no Mojang services, no sound device, no narrator).
 
 ### Totem counter beside the armour, and "Layout" (F9)
 
