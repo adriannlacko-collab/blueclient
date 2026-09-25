@@ -38,8 +38,7 @@ public class HotkeysScreen extends VanillaScreen {
          if (count == 0) {
             return "No hotkeys yet — add one and give it a key";
          } else {
-            int running = module == null ? 0 : module.runningCount();
-            return count + (count == 1 ? " hotkey" : " hotkeys") + (running > 0 ? " — " + running + " running" : "") + (this.hasBar() ? " — scroll for more" : "");
+            return count + (count == 1 ? " hotkey" : " hotkeys") + (this.hasBar() ? " — scroll for more" : "");
          }
       }
    }
@@ -69,14 +68,14 @@ public class HotkeysScreen extends VanillaScreen {
       int y = top + (hotkeys.isEmpty() ? 0 : Math.min(this.rows, hotkeys.size())) * 24;
       int half = 150;
       Button add = Button.builder(Component.literal("Add Hotkey"), button -> this.addHotkey()).bounds(this.blockLeft, y, half, 20).build();
-      add.setTooltip(Tooltip.create(Component.literal("A new hotkey: pick its key, then add chat lines, commands, key presses or a recording")));
+      add.setTooltip(Tooltip.create(Component.literal("A new hotkey: pick its key, then add the chat lines or commands it sends")));
       this.addRenderableWidget(add);
       Button settings = Button.builder(
             Component.literal("Settings"), button -> Screens.open(this.minecraft, new VanillaOptionsScreen(this, HotkeysModule.instance(), true))
          )
          .bounds(this.blockLeft + half + 8, y, GRID_W - half - 8, 20)
          .build();
-      settings.setTooltip(Tooltip.create(Component.literal("The Hotkeys switch, a stop-all key, stopping on damage and the gap between chat lines")));
+      settings.setTooltip(Tooltip.create(Component.literal("The Hotkeys switch and the gap between chat lines")));
       this.addRenderableWidget(settings);
       return y + 24;
    }
@@ -87,29 +86,22 @@ public class HotkeysScreen extends VanillaScreen {
       Button toggle = Button.builder(this.rowLabel(hotkey), button -> {
          hotkey.enabled = !hotkey.enabled;
          if (!hotkey.enabled && module != null) {
-            module.stop(this.minecraft, hotkey, false);
+            module.cancel(hotkey);
          }
 
          HotkeysModule.saveStore();
          button.setMessage(this.rowLabel(hotkey));
       }).bounds(x, y, toggleW, 20).build();
-      toggle.setTooltip(Tooltip.create(this.summary(hotkey)));
+      toggle.setTooltip(Tooltip.create(hotkey.summary()));
       this.addRenderableWidget(toggle);
-      boolean running = module != null && module.running(hotkey);
-      Button run = Button.builder(Component.literal(running ? "■" : "▶").withStyle(running ? ChatFormatting.RED : ChatFormatting.GREEN), button -> {
+      Button run = Button.builder(Component.literal("▶").withStyle(ChatFormatting.GREEN), button -> {
          if (module != null) {
-            if (module.running(hotkey)) {
-               module.stop(this.minecraft, hotkey, false);
-               this.scheduleRebuild();
-            } else {
-               Screens.open(this.minecraft, null);
-               module.start(this.minecraft, hotkey);
-            }
+            Screens.open(this.minecraft, null);
+            module.send(this.minecraft, hotkey);
          }
       }).bounds(x + toggleW + 2, y, SMALL_W, 20).build();
-      run.active = running
-         || module != null && module.isEnabled() && !hotkey.steps.isEmpty() && this.minecraft != null && this.minecraft.player != null;
-      run.setTooltip(Tooltip.create(Component.literal(running ? "Stop" : "Close this menu and run it now")));
+      run.active = module != null && module.isEnabled() && !hotkey.lines.isEmpty() && this.minecraft != null && this.minecraft.player != null;
+      run.setTooltip(Tooltip.create(Component.literal("Close this menu and send it now")));
       this.addRenderableWidget(run);
       Button gear = new IconButton(
          x + toggleW + 2 + SMALL_W + 2, y, SMALL_W, 20, Component.empty(), button -> Screens.open(this.minecraft, new HotkeyEditScreen(this, hotkey)), Icon.GEAR
@@ -131,12 +123,6 @@ public class HotkeysScreen extends VanillaScreen {
          .append(hotkey.keyLabel().copy().withStyle(ChatFormatting.GRAY))
          .append(Component.literal("]: ").withStyle(ChatFormatting.DARK_GRAY))
          .append(onOff(hotkey.enabled));
-   }
-
-   private Component summary(HotkeysModule.Hotkey hotkey) {
-      int count = hotkey.steps.size();
-      String actions = count == 0 ? "no actions yet" : count + (count == 1 ? " action" : " actions");
-      return Component.literal(hotkey.modeNote() + " — " + actions);
    }
 
    private void addHotkey() {

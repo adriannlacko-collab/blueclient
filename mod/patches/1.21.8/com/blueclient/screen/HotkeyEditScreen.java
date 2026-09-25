@@ -1,11 +1,9 @@
 package com.blueclient.screen;
 
 import com.blueclient.hud.modules.HotkeysModule;
-import com.blueclient.ui.Screens;
 import com.blueclient.ui.Widgets;
 import com.blueclient.ui.input.BlueButton;
 import com.blueclient.ui.input.Inputs;
-import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.class_124;
 import net.minecraft.class_2561;
@@ -15,21 +13,20 @@ import net.minecraft.class_3675;
 import net.minecraft.class_4185;
 import net.minecraft.class_437;
 import net.minecraft.class_5244;
-import net.minecraft.class_5676;
 import net.minecraft.class_7919;
 
-/** One hotkey: its name, key, how it runs, and its list of actions. */
+/** One hotkey: its name, its key, and the chat lines or commands it sends. */
 public class HotkeyEditScreen extends VanillaScreen {
    private static final int GRID_W = 308;
    private static final int HALF = 150;
    private static final int SMALL_W = 20;
-   /** Two rows of add buttons, the footer and the line under it. */
-   private static final int TAIL = 80;
+   /** The add button, the footer and the line under it. */
+   private static final int TAIL = 56;
    private static final int ESCAPE = 256;
-   private static final List<Integer> LOOPS = List.of(0, 2, 3, 5, 10, 20, 50, 100);
-   private static final List<Integer> GAPS = List.of(0, 5, 10, 20, 40, 60, 100, 200, 600, 1200);
    private final HotkeysModule.Hotkey hotkey;
    private HotkeyEditScreen.KeyButton listening;
+   /** The line being typed in, which keeps the cursor when the page is built again, or -1. */
+   private int focusLine = -1;
 
    public HotkeyEditScreen(class_437 parent, HotkeysModule.Hotkey hotkey) {
       super(parent, class_2561.method_43470("Edit Hotkey"));
@@ -44,7 +41,7 @@ public class HotkeyEditScreen extends VanillaScreen {
          class_304 clash = HotkeysModule.boundTo(this.field_22787, this.hotkey.bound().get());
          return clash != null
             ? "Heads up: this key also does \"" + HotkeysModule.mappingName(clash).getString() + "\" in Controls"
-            : this.hotkey.modeNote();
+            : "Each press sends these in order — start a line with / for a command";
       }
    }
 
@@ -84,137 +81,94 @@ public class HotkeyEditScreen extends VanillaScreen {
       this.method_37063(new HotkeyEditScreen.KeyButton(right, y, GRID_W - HALF - 8));
       y += 24;
       this.method_37063(
-         Widgets.cycling(HotkeysModule.Hotkey::modeLabel, this.hotkey.mode, HotkeysModule.MODES)
-            .method_32617(x, y, HALF, 20, class_2561.method_43470("Mode"), (button, value) -> {
-               this.hotkey.mode = value;
-               this.scheduleRebuild();
-            })
-      );
-      this.method_37063(
          Widgets.cycling(VanillaScreen::onOff, this.hotkey.enabled, List.of(Boolean.TRUE, Boolean.FALSE))
-            .method_32617(right, y, GRID_W - HALF - 8, 20, class_2561.method_43470("Enabled"), (button, value) -> {
+            .method_32617(x, y, GRID_W, 20, class_2561.method_43470("Enabled"), (button, value) -> {
                this.hotkey.enabled = value;
                HotkeysModule module = HotkeysModule.instance();
                if (!value && module != null) {
-                  module.stop(this.field_22787, this.hotkey, false);
+                  module.cancel(this.hotkey);
                }
             })
       );
-      y += 24;
-      boolean once = HotkeysModule.ONCE.equals(this.hotkey.mode);
-      class_5676<Integer> loops = Widgets.cycling(HotkeyEditScreen::loopsLabel, this.hotkey.loops, withValue(LOOPS, this.hotkey.loops))
-         .method_32617(x, y, HALF, 20, class_2561.method_43470("Runs"), (button, value) -> this.hotkey.loops = value);
-      loops.field_22763 = HotkeysModule.LOOP.equals(this.hotkey.mode);
-      loops.method_47400(class_7919.method_47407(class_2561.method_43470("How many times a loop runs before it stops by itself")));
-      this.method_37063(loops);
-      class_5676<Integer> gap = Widgets.cycling(HotkeyEditScreen::gapLabel, this.hotkey.gap, withValue(GAPS, this.hotkey.gap))
-         .method_32617(right, y, GRID_W - HALF - 8, 20, class_2561.method_43470("Pause"), (button, value) -> this.hotkey.gap = value);
-      gap.field_22763 = !once;
-      gap.method_47400(class_7919.method_47407(class_2561.method_43470("The pause between one run through the actions and the next")));
-      this.method_37063(gap);
       y += 28;
+      List<String> lines = this.hotkey.lines;
       this.method_37063(
-         Widgets.heading(x, y, GRID_W, 12, class_2561.method_43470(this.hotkey.steps.isEmpty() ? "No actions yet — add one below" : "Actions, in order"), this.field_22793, -6250336)
+         Widgets.heading(x, y, GRID_W, 12, class_2561.method_43470(lines.isEmpty() ? "Nothing to send yet — add a line below" : "Sent in order"), this.field_22793, -6250336)
       );
       y += 14;
-      List<HotkeysModule.Step> steps = this.hotkey.steps;
-      int offset = this.fitRows(y, steps.size(), TAIL);
-      int last = Math.min(steps.size(), offset + this.rows);
+      int offset = this.fitRows(y, lines.size(), TAIL);
 
-      for (int i = offset; i < last; i++) {
-         this.addStepRow(i, x, y + (i - offset) * 24);
+      // scroll a line just added into view
+      while (this.focusLine >= offset + this.rows && this.method_25401(0.0, 0.0, 0.0, -1.0)) {
+         offset = this.fitRows(y, lines.size(), TAIL);
       }
 
-      y += (steps.isEmpty() ? 0 : Math.min(this.rows, steps.size())) * 24;
-      int third = (GRID_W - 8) / 3;
-      this.addStepButton("+ Chat / command", HotkeysModule.CHAT, x, y, third, "Say something in chat, or run a command when it starts with /");
-      this.addStepButton("+ Key press", HotkeysModule.PRESS, x + third + 4, y, third, "Press or hold one of the game's keys: jump, attack, use, drop, a hotbar slot...");
-      this.addStepButton("+ Wait", HotkeysModule.WAIT, x + (third + 4) * 2, y, GRID_W - (third + 4) * 2, "Wait a moment before the next action");
-      y += 24;
-      class_4185 record = class_4185.method_46430(class_2561.method_43470("● ").method_27692(class_124.field_1061).method_10852(class_2561.method_43470("Record movement").method_27692(class_124.field_1068)), button -> {
-            this.saveName();
-            HotkeysModule.startRecording(this.field_22787, this.hotkey, null, this);
-         })
-         .method_46434(x, y, GRID_W, 20)
-         .method_46431();
-      record.field_22763 = this.field_22787 != null && this.field_22787.field_1724 != null;
-      record.method_47400(
-         class_7919.method_47407(
-            class_2561.method_43470(
-               "Closes this menu and records walking, jumping, sneaking, sprinting, clicks, hotbar and camera until you press Esc — then it is an action of this hotkey"
-            )
-         )
-      );
-      this.method_37063(record);
+      int last = Math.min(lines.size(), offset + this.rows);
+
+      for (int i = offset; i < last; i++) {
+         this.addLineRow(i, x, y + (i - offset) * 24);
+      }
+
+      y += (lines.isEmpty() ? 0 : Math.min(this.rows, lines.size())) * 24;
+      class_4185 add = class_4185.method_46430(class_2561.method_43470("+ Chat line or command"), button -> {
+         this.hotkey.lines.add("");
+         this.focusLine = this.hotkey.lines.size() - 1;
+         this.scheduleRebuild();
+      }).method_46434(x, y, GRID_W, 20).method_46431();
+      add.method_47400(class_7919.method_47407(class_2561.method_43470("Something to say in chat, or a command when it starts with /")));
+      this.method_37063(add);
       return y + 24;
    }
 
-   private void addStepRow(int index, int x, int y) {
-      HotkeysModule.Step step = this.hotkey.steps.get(index);
-      int labelW = this.blockWidth - (SMALL_W + 2) * 2;
-      class_4185 label = class_4185.method_46430(class_2561.method_43473().method_10852(class_2561.method_43470((index + 1) + ". ").method_27692(class_124.field_1080)).method_10852(step.label()), button -> Screens.open(
-            this.field_22787, new HotkeyStepScreen(this, this.hotkey, step, false)
-         ))
-         .method_46434(x, y, labelW, 20)
-         .method_46431();
-      label.method_47400(class_7919.method_47407(class_2561.method_43470("Edit")));
-      this.method_37063(label);
+   private void addLineRow(int index, int x, int y) {
+      List<String> lines = this.hotkey.lines;
+      int boxW = this.blockWidth - (SMALL_W + 2) * 2;
+      class_342 text = new class_342(this.field_22793, x, y, boxW, 20, class_2561.method_43470("Line " + (index + 1)));
+      text.method_1880(HotkeysModule.MAX_LINE);
+      text.method_1852(lines.get(index));
+      text.method_47404(class_2561.method_43470("hello, or /spawn").method_27692(class_124.field_1063));
+      text.method_1863(value -> {
+         if (index < this.hotkey.lines.size()) {
+            this.hotkey.lines.set(index, value);
+            this.focusLine = index;
+         }
+      });
+      this.method_37063(text);
+      if (index == this.focusLine) {
+         this.method_25395(text);
+      }
+
       class_4185 up = class_4185.method_46430(class_2561.method_43470("↑"), button -> {
-         List<HotkeysModule.Step> steps = this.hotkey.steps;
-         int at = steps.indexOf(step);
-         if (at > 0) {
-            steps.set(at, steps.get(at - 1));
-            steps.set(at - 1, step);
+         if (index > 0 && index < lines.size()) {
+            lines.set(index, lines.set(index - 1, lines.get(index)));
+            this.focusLine = -1;
             HotkeysModule.saveStore();
             this.scheduleRebuild();
          }
-      }).method_46434(x + labelW + 2, y, SMALL_W, 20).method_46431();
+      }).method_46434(x + boxW + 2, y, SMALL_W, 20).method_46431();
       up.field_22763 = index > 0;
       up.method_47400(class_7919.method_47407(class_2561.method_43470("Move up")));
       this.method_37063(up);
       class_4185 remove = class_4185.method_46430(class_2561.method_43470("X").method_27692(class_124.field_1061), button -> {
          HotkeysModule module = HotkeysModule.instance();
          if (module != null) {
-            module.stop(this.field_22787, this.hotkey, false);
+            module.cancel(this.hotkey);
          }
 
-         this.hotkey.steps.remove(step);
+         if (index < lines.size()) {
+            lines.remove(index);
+         }
+
+         this.focusLine = -1;
+
          HotkeysModule.saveStore();
          this.scheduleRebuild();
-      }).method_46434(x + labelW + 2 + SMALL_W + 2, y, SMALL_W, 20).method_46431();
+      }).method_46434(x + boxW + 2 + SMALL_W + 2, y, SMALL_W, 20).method_46431();
       remove.method_47400(class_7919.method_47407(class_2561.method_43470("Remove")));
       this.method_37063(remove);
    }
 
-   private void addStepButton(String text, String type, int x, int y, int w, String about) {
-      class_4185 button = class_4185.method_46430(class_2561.method_43470(text), press -> {
-         this.saveName();
-         Screens.open(this.field_22787, new HotkeyStepScreen(this, this.hotkey, HotkeysModule.Step.of(type), true));
-      }).method_46434(x, y, w, 20).method_46431();
-      button.method_47400(class_7919.method_47407(class_2561.method_43470(about)));
-      this.method_37063(button);
-   }
-
-   private static List<Integer> withValue(List<Integer> values, int value) {
-      if (values.contains(value)) {
-         return values;
-      } else {
-         List<Integer> out = new ArrayList<>(values);
-         out.add(value);
-         out.sort(Integer::compare);
-         return out;
-      }
-   }
-
-   private static class_2561 loopsLabel(int loops) {
-      return class_2561.method_43470(loops <= 0 ? "Until pressed again" : loops + " times");
-   }
-
-   private static class_2561 gapLabel(int ticks) {
-      return class_2561.method_43470(ticks <= 0 ? "None" : HotkeysModule.seconds(ticks));
-   }
-
-   private void saveName() {
+   private void save() {
       if (this.hotkey.name.isBlank()) {
          this.hotkey.name = "Hotkey";
       }
@@ -244,14 +198,15 @@ public class HotkeyEditScreen extends VanillaScreen {
 
    @Override
    public void method_25419() {
-      this.saveName();
+      this.hotkey.lines.removeIf(String::isBlank);
+      this.save();
       super.method_25419();
    }
 
    private class KeyButton extends BlueButton {
       KeyButton(int x, int y, int w) {
          super(x, y, w, 20, class_2561.method_43473(), button -> {});
-         this.method_47400(class_7919.method_47407(class_2561.method_43470("The key that runs this hotkey. Click, then press a key or a mouse button; Esc clears it")));
+         this.method_47400(class_7919.method_47407(class_2561.method_43470("The key that sends this hotkey. Click, then press a key or a mouse button; Esc clears it")));
          this.refresh();
       }
 

@@ -10,15 +10,13 @@ for 26.3 (Mojang's names), and this script derives the other nine:
   41, and "no key" is -1 rather than 0.
 * 1.20.6-1.21.11 are compiled against the intermediary-named game
   (`class_2561.method_43470` for `Component.literal`), so every Minecraft name
-  the four files use is renamed. The table below was looked up in Mojang's
+  the three files use is renamed. The table below was looked up in Mojang's
   client mappings joined with Fabric's intermediary for each of those
   versions, and is the same for all seven; javac against each version's jar
   checks every name when the build runs.
-* up to 1.21.4 the selected hotbar slot is the field `Inventory.selected`,
-  from 1.21.5 `getSelectedSlot()` / `setSelectedSlot(int)`;
 * before 1.21.9 a key has one KeyMapping (see SHARED_KEYS in HotkeysModule).
 
-Only these four files are handled; anything else under patches/ is edited by
+Only these three files are handled; anything else under patches/ is edited by
 hand, per version, as before.
 """
 
@@ -30,11 +28,9 @@ FILES = [
     "com/blueclient/hud/modules/HotkeysModule.java",
     "com/blueclient/screen/HotkeysScreen.java",
     "com/blueclient/screen/HotkeyEditScreen.java",
-    "com/blueclient/screen/HotkeyStepScreen.java",
 ]
 GLFW = ["26.1.2", "26.2"]
 INTERMEDIARY = ["1.20.6", "1.21.1", "1.21.4", "1.21.5", "1.21.8", "1.21.10", "1.21.11"]
-SELECTED_FIELD = {"1.20.6", "1.21.1", "1.21.4"}
 ONE_MAPPING_PER_KEY = {"1.20.6", "1.21.1", "1.21.4", "1.21.5", "1.21.8"}
 
 IMPORTS = {
@@ -42,9 +38,7 @@ IMPORTS = {
     "net.minecraft.ChatFormatting": "net.minecraft.class_124",
     "net.minecraft.client.KeyMapping": "net.minecraft.class_304",
     "net.minecraft.client.Minecraft": "net.minecraft.class_310",
-    "net.minecraft.client.Options": "net.minecraft.class_315",
     "net.minecraft.client.gui.components.Button": "net.minecraft.class_4185",
-    "net.minecraft.client.gui.components.CycleButton": "net.minecraft.class_5676",
     "net.minecraft.client.gui.components.EditBox": "net.minecraft.class_342",
     "net.minecraft.client.gui.components.Tooltip": "net.minecraft.class_7919",
     "net.minecraft.client.gui.screens.Screen": "net.minecraft.class_437",
@@ -52,6 +46,7 @@ IMPORTS = {
     "net.minecraft.client.player.LocalPlayer": "net.minecraft.class_746",
     "net.minecraft.network.chat.CommonComponents": "net.minecraft.class_5244",
     "net.minecraft.network.chat.Component": "net.minecraft.class_2561",
+    "net.minecraft.network.chat.MutableComponent": "net.minecraft.class_5250",
 }
 
 # (pattern, replacement), applied in order to code (comments are left alone).
@@ -63,10 +58,8 @@ RENAMES = [
     (r"\bTooltip\.create\(", "Tooltip.method_47407("),
     (r"\bButton\.builder\(", "Button.method_46430("),
     (r"\bMinecraft\.getInstance\(\)", "Minecraft.method_1551()"),
-    (r"\bKeyMapping\.click\(", "KeyMapping.method_1420("),
     (r"\bKeyMapping\.resetMapping\(\)", "KeyMapping.method_1426()"),
     (r"\bInputConstants\.UNKNOWN\b", "InputConstants.field_16237"),
-    (r"\bInputConstants\.Type\.MOUSE\b", "InputConstants.class_307.field_1672"),
     (r"\bInputConstants\.Key\b", "InputConstants.class_306"),
     (r"\bCommonComponents\.GUI_DONE\b", "CommonComponents.field_24334"),
     (r"\bCommonComponents\.GUI_BACK\b", "CommonComponents.field_24339"),
@@ -77,7 +70,6 @@ RENAMES = [
     (r"\bChatFormatting\.YELLOW\b", "ChatFormatting.field_1054"),
     (r"\bChatFormatting\.DARK_GRAY\b", "ChatFormatting.field_1063"),
     (r"\bChatFormatting\.AQUA\b", "ChatFormatting.field_1075"),
-    (r"\bChatFormatting\.LIGHT_PURPLE\b", "ChatFormatting.field_1076"),
     # Component / MutableComponent
     (r"\.withStyle\(", ".method_27692("),
     (r"\.append\(", ".method_10852("),
@@ -99,6 +91,7 @@ RENAMES = [
     (r"\bthis\.width\b", "this.field_22789"),
     (r"\bthis\.addRenderableWidget\(", "this.method_37063("),
     (r"\bthis\.setFocused\(", "this.method_25395("),
+    (r"\bthis\.mouseScrolled\(", "this.method_25401("),
     (r"\bpublic void onClose\(\)", "public void method_25419()"),
     (r"\bsuper\.onClose\(\)", "super.method_25419()"),
     # Minecraft, Options
@@ -106,34 +99,14 @@ RENAMES = [
     (r"\.options\b", ".field_1690"),
     (r"\.getConnection\(\)", ".method_1562()"),
     (r"\.keyMappings\b", ".field_1839"),
-    (r"\.keyUp\b", ".field_1894"),
-    (r"\.keyDown\b(?!\()", ".field_1881"),
-    (r"\.keyLeft\b", ".field_1913"),
-    (r"\.keyRight\b", ".field_1849"),
-    (r"\.keyJump\b", ".field_1903"),
-    (r"\.keyShift\b", ".field_1832"),
-    (r"\.keySprint\b", ".field_1867"),
-    (r"\.keyAttack\b", ".field_1886"),
-    (r"\.keyUse\b", ".field_1904"),
-    (r"\.keyHotbarSlots\b", ".field_1852"),
     # KeyMapping (the Setting.Key calls of the same names are BlueClient's own)
     (r"\bmapping\.getName\(\)", "mapping.method_1431()"),
-    (r"(?<!bound\(\))(?<!stopKey)\.isDown\(\)", ".method_1434()"),
-    (r"\.setDown\(", ".method_23481("),
+    (r"(?<!bound\(\))\.isDown\(\)", ".method_1434()"),
     (r"\.consumeClick\(\)", ".method_1436()"),
     (r"\btrigger\.setKey\(", "trigger.method_1422("),
     # InputConstants.Key
     (r"\.getName\(\)", ".method_1441()"),
-    (r"\bkey\.getType\(\)", "key.method_1442()"),
-    (r"\bkey\.getValue\(\)", "key.method_1444()"),
-    # the player, the connection
-    (r"\.getHealth\(\)", ".method_6032()"),
-    (r"\.getInventory\(\)", ".method_31548()"),
-    (r"\.getYRot\(\)", ".method_36454()"),
-    (r"\.getXRot\(\)", ".method_36455()"),
-    (r"\bplayer\.turn\(", "player.method_5872("),
-    (r"\.getSelectedSlot\(\)", ".method_67532()"),
-    (r"\.setSelectedSlot\(", ".method_61496("),
+    # the connection
     (r"\.sendCommand\(", ".method_45730("),
     (r"\.sendChat\(", ".method_45729("),
 ]
@@ -161,10 +134,6 @@ def split_comments(text):
 
 
 def to_intermediary(text, mc):
-    if mc in SELECTED_FIELD:
-        text = text.replace("player.getInventory().getSelectedSlot()", "player.getInventory().selected")
-        text = text.replace("player.getInventory().setSelectedSlot(slot);", "player.getInventory().selected = slot;")
-        text = text.replace(".getInventory().selected", ".method_31548().field_7545")
     if mc in ONE_MAPPING_PER_KEY:
         text = text.replace("private static final boolean SHARED_KEYS = true;", "private static final boolean SHARED_KEYS = false;")
     for named, inter in IMPORTS.items():
