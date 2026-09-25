@@ -169,7 +169,10 @@ def lay_out(mc, run_dir, jars_dir, scoreboard_pos, extra_config, defaults=False,
     for spec in files or []:
         dest, src = spec.split("=", 1)
         (run_dir / dest).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, run_dir / dest)
+        if Path(src).is_dir():
+            shutil.copytree(src, run_dir / dest, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src, run_dir / dest)
 
 
 def classpath(mc):
@@ -349,7 +352,8 @@ def main():
     ap.add_argument("--defaults", action="store_true", help="leave every module at its default (a fresh install)")
     ap.add_argument("--modules", default=None, help='JSON of module switches on top, e.g. {"colour_saturation": true}')
     ap.add_argument("--file", action="append", default=[], metavar="DEST=SRC",
-                    help="copy SRC into the game folder at DEST (e.g. config/blueclient-hotkeys.json=h.json)")
+                    help="copy SRC (a file or a folder) into the game folder at DEST "
+                         "(e.g. config/blueclient-hotkeys.json=h.json)")
     ap.add_argument("--shot", action="append", default=[], metavar="NAME=STEPS",
                     help="after the world screenshot: press/click/wait (Shot.java steps, space-separated), "
                          "then save screen-NAME.png; repeatable, in order")

@@ -1,0 +1,5 @@
+{
+  "activeProfile": "Default",
+  "menuHintShown": true,
+  "profiles": {"Default": {"modules": {"fps": true, "particles": true}, "settings": {"particles.others": 50}}}
+}

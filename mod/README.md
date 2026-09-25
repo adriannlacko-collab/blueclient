@@ -361,6 +361,34 @@ armour pinned where the layout screen's freeze would pin it, with the armour
 dragged to the left edge, and with the totem moved by hand. 26.3 and 1.20.6
 started in the game with the new jars: joined, 0 mixin/linkage errors.
 
+### Fireworks with thinned particles (F10)
+
+`ParticlesModule` added on all ten (baseline decompiled like the others: the
+whole jar, with the compile classpath as libraries). On every version
+`patch:` shows only `copies`, `keeps` and `naming` changed and the fields
+`skipNext` and `skipped` added, and `recompile:` shows branch layout only.
+
+`test/fireworks/` is a data pack (formats 94–121, 1.21.11–26.3) that sets
+off a firework over each player every 2 s; `test/particles-thinned.json`
+turns on Custom particles with *Other particles* at 50%:
+
+    python3 mod/test/run_game.py 26.2 --file config/blueclient.json=mod/test/particles-thinned.json \
+        --file saves/bctest/datapacks/fw=mod/test/fireworks [--original]
+
+(`--file` also copies a folder.) Results:
+
+| version | jar | *Other particles* | fireworks | result |
+|---|---|---|---|---|
+| 26.2 | released | 50% | 1 | crash: `sparkParticle` is null, the player's report |
+| 26.2 | patched | 50% | 24 | no crash, fewer sparks drawn |
+| 26.2 | patched | 0% | 16 | no crash, no sparks drawn |
+| 1.21.11 | released | 50% | 1 | crash: the same NPE |
+| 1.21.11 | patched | 50% | 18 | no crash |
+| 26.3, 26.1.2 | patched | 50% | 18 each | no crash |
+
+All joined with 0 mixin or linkage errors. The other versions were built from
+the same source and compiled against their own jars. They were not started.
+
 ### Second pass: all ten versions in the game
 
 Each version with the final jars, the test config plus Colour Saturation,

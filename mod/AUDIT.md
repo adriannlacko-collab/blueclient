@@ -22,7 +22,8 @@ one background thread (`Disk`, atomic move); network work is on executors
 and comes back through `client.execute`. The findings below are what is
 left. **F** = fixed by a patch in `mod/patches/`, **U** = found in the first
 pass and not fixed then; a second pass fixed U1, U4, U5, U8, U12 and part of
-U6 (marked "(fixed)" and moved up) and added F7, F8; F9 came from a player report. The rest are listed
+U6 (marked "(fixed)" and moved up) and added F7, F8; F9 came from a player report, F10 from a
+player's crash log. The rest are listed
 under "Not fixed" with the reason and a concrete fix.
 
 Severity: **High** can stop the game or lose user data; **Medium** visible
@@ -246,6 +247,51 @@ The layout screen is also renamed "Layout" (its title, the tile that opens
 it in `VanillaModsScreen`, and "their options and the layout" in
 `PresetEditScreen`).
 
+### F10 — High — crash — a firework crashes the game while *Custom particles* thins particles (all 10)
+`hud.modules.ParticlesModule` (`copies`, `keeps`, `naming`).
+
+From a player's crash log (26.2, 1.55.0): a server set off fireworks
+for a match winner and the game crashed one tick later with *Ticking
+Particle*, `NullPointerException: Cannot invoke
+"FireworkParticles$SparkParticle.setTrail(boolean)" because "sparkParticle"
+is null`, in `FireworkParticles$Starter.createParticle`.
+
+`mixin.ParticleManagerMixin.blueclient$copies` (a `@WrapMethod` on
+`ParticleEngine.createParticle`, `method_3056` on 1.2x) returns `null`
+without calling the game when `ParticlesModule.copies` is 0. `copies` is
+`share(1, others)` for any particle that is not a crit, sharpness hit or
+explosion, and `min(1, share(1, explosion))` for an explosion that is not
+from an emitter. With *Custom particles* on and *Other particles* (or
+*Explosion particles*) at any value below 100%, some particles, or all of
+them at 0%, come back as `null`. The game's own callers use what
+`createParticle` returns. A firework's `Starter` casts each spark and calls
+`setTrail`, `setTwinkle`, `setAlpha` and `setColor` on it, so the first
+skipped spark throws. The game itself returns `null` only for a particle type
+with no provider. The same code is in all ten jars.
+
+The mixin is not patched (see README), so the fix is in `ParticlesModule`:
+
+* `copies` never returns 0. When it would have, it returns 1 and sets
+  `skipNext`.
+* `naming(true)`, which the mixin calls straight after `copies` returns 1,
+  turns `skipNext` into a bit for the current depth (`skipped`), and
+  `naming(false)`, which the mixin calls in a `finally`, clears that bit.
+* `keeps()`, the `@Inject` at the head of `ParticleEngine.add`, returns
+  `false` while the current depth's bit is set, so the game's own
+  `createParticle` (`makeParticle`, then `add`, then return) makes the
+  particle and hands it back but never adds it. The caller gets a real
+  particle, and nothing is ticked or drawn.
+
+The bit is per depth, so a particle made while another is being made (a
+provider that makes particles) is judged on its own, and a type with no
+provider (no `add`) leaves nothing behind. The visible amounts are the same
+as before, with one difference: a skipped particle is now constructed before
+it is dropped. A skipped particle that is a `NoRenderParticle` (an emitter)
+is now added, because the mixin never asks `keeps()` about those. Its
+children are then thinned one by one at the same rate, where before the
+whole emitter was dropped or kept. At 0% the result is the same: nothing is
+drawn.
+
 ---
 
 ## Not fixed
@@ -258,9 +304,11 @@ breaking, crits…) allocates an `Object[]` and six `Double`s for
 *Custom particles* off (`copies == 1`). The handler must call the original
 through `Operation.call(Object...)`, so no change to the handler body alone
 can remove this; with *Custom particles* off it already does no other work
-(one static check, a counter up and down). Fix, if the mixin may change: an
-`@Inject(at = HEAD, cancellable = true)` that returns `null` for
-`copies == 0`, and a separate loop only when `copies > 1`. In the measured
+(one static check, a counter up and down). Fix, if the mixin may change: a
+separate loop only when `copies > 1`, and no path that returns `null` from
+`createParticle`. The game's callers use the particle it returns (see F10),
+so a particle to skip must still be made and only kept out of
+`ParticleEngine.add`. In the measured
 scene (singleplayer, no weather) no allocation from it was sampled.
 
 ### U3 — Low — perf — every packet allocates in the decoder (all 10, Netty thread)
