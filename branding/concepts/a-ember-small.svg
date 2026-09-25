@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<defs><mask id="mk1" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512"><rect width="512" height="512" fill="#000"/><g fill="#fff"><circle cx="226" cy="340" r="134"/><path d="M 92 340 C 92 266, 118 196, 170 150 C 206 122, 226 96, 232 58 C 262 84, 272 112, 268 142 C 312 110, 356 88, 392 44 C 404 120, 380 200, 330 244 L 290 290 L 200 300 L 120 340 Z"/></g><g fill="#000"><circle cx="231" cy="314" r="131"/></g><g fill="#fff"></g></mask></defs>
+
+<g transform=""><rect width="512" height="512" fill="#fff" mask="url(#mk1)"/><g fill="#fff"><rect x="207.5" y="322" width="13" height="52" rx="6.5"/><rect x="188" y="341.5" width="52" height="13" rx="6.5"/><rect x="286" y="376" width="8" height="32" rx="4"/><rect x="274" y="388" width="32" height="8" rx="4"/></g></g>
+</svg>
