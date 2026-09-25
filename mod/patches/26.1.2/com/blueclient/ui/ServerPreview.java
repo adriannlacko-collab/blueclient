@@ -46,9 +46,9 @@ public final class ServerPreview {
    private static final int ROW_W = 305;
    private static final int ICON = 32;
    /** Address box to the row. */
-   private static final int GAP = 8;
+   private static final int GAP = 6;
    /** The row to the first button under it, and between buttons moved down. */
-   private static final int BUTTON_GAP = 4;
+   private static final int BUTTON_GAP = 6;
    /** How long the address has to stay the same before it is pinged. */
    private static final long SETTLE_MS = 500L;
    private static final int WHITE = -1;
@@ -120,8 +120,8 @@ public final class ServerPreview {
    }
 
    /**
-    * Moves the widgets under the address box down to {@code from}, one under
-    * the other, where they would cover the row. False, and nothing moved, when
+    * Moves the widgets under the address box to {@code from}, one under the
+    * other, {@link #BUTTON_GAP} apart. False, and nothing moved, when
     * the last of them would then leave the screen.
     */
    private static boolean makeRoom(Screen screen, EditBox box, int from, int height) {
@@ -145,7 +145,10 @@ public final class ServerPreview {
          AbstractWidget widget = below.get(i);
          if (widget.getY() != lastOld) {
             lastOld = widget.getY();
-            lastNew = Math.max(lastOld, next);
+            // Every row goes right under the one before, up as well as down, so
+            // the gap under the preview is the same on Add Server and Direct
+            // Connection (whose Join button sits far lower in vanilla).
+            lastNew = next;
          }
 
          ys[i] = lastNew;

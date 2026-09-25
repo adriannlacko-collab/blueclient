@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL13C;
+import org.lwjgl.opengl.GL14C;
 import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
@@ -173,8 +174,11 @@ public final class Gl {
     */
    static int unitBase() {
       if (unitBase < 0) {
-         int max = GL11C.glGetInteger(35661);
-         unitBase = max >= 16 ? max - 4 : 0;
+         // 1.12.0 moved the passes to the last units and then restored the GL
+         // state from the game's own record; on real drivers that left the
+         // screen glitching a few seconds into a world. Back to units 0-2 and
+         // reading the state back from the driver, as 1.11 did.
+         unitBase = 0;
       }
 
       return unitBase;
@@ -203,6 +207,8 @@ public final class Gl {
       GL11C.glDisable(2929);
       GL11C.glDisable(2884);
       GL11C.glDisable(3089);
+      GL11C.glDepthMask(false);
+      GL14C.glBlendEquation(32774);
    }
 
    public static void clearErrors() {
